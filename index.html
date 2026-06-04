@@ -257,6 +257,7 @@ const PRODUCTS = [
   {id:'cloudlogging',name:'Cloud Logging',desc:'日志管理',icon:'📋',category:'运维'},
   {id:'cloudmonitoring',name:'Cloud Monitoring',desc:'监控告警',icon:'📈',category:'运维'},
   {id:'vertexai',name:'Vertex AI',desc:'机器学习平台',icon:'🧠',category:'AI / ML'},
+  {id:'import',name:'配置导入估算',desc:'上传清单→识别云→GCP报价',icon:'📥',category:'工具'},
 ];
 
 // Machine types for Compute Engine — 全系列，价格为 us-central1 按需近似价 (USD/小时)
@@ -416,7 +417,7 @@ function renderConfig(id){
     bigquery:renderBigQuery, pubsub:renderPubSub, cloudcdn:renderCloudCDN,
     loadbalancer:renderLoadBalancer, cloudnat:renderCloudNAT,
     memorystoreredis:renderMemorystore, cloudlogging:renderLogging,
-    cloudmonitoring:renderMonitoring, vertexai:renderVertexAI
+    cloudmonitoring:renderMonitoring, vertexai:renderVertexAI, import:renderImport
   };
   el.innerHTML = `
     <div class="panel-header">
@@ -1407,6 +1408,304 @@ function onVAISvc(){
 function addVertexAI(){
   const c=calcVAI();
   addItem({productId:'vertexai',name:'Vertex AI',icon:'🧠',label:c.label,cost:c.total,breakdown:c.breakdown});
+}
+
+// ─── 配置导入 / 跨云迁移估算 ───────────────────────────────────────────────
+// 各云机型规格表（vCPU / RAM GB）
+const AWS_SIZE_VCPU={nano:2,micro:2,small:2,medium:2,large:2,xlarge:4,'2xlarge':8,'3xlarge':12,'4xlarge':16,'6xlarge':24,'8xlarge':32,'9xlarge':36,'12xlarge':48,'16xlarge':64,'18xlarge':72,'24xlarge':96,'32xlarge':128,'48xlarge':192};
+const T_VCPU={nano:2,micro:2,small:2,medium:2,large:2,xlarge:4,'2xlarge':8};
+const T2_VCPU={nano:1,micro:1,small:1,medium:2,large:2,xlarge:4,'2xlarge':8};
+const T_RAM={nano:0.5,micro:1,small:2,medium:4,large:8,xlarge:16,'2xlarge':32};
+const AWS_RATIO={m:4,r:8,c:2,t:4,x:16,z:4,i:8,d:4,h:4,g:4,p:4}; // RAM/vCPU by family letter
+
+function awsSpec(type){
+  const m=type.toLowerCase().match(/^([a-z])(\d)[a-z]*\.([0-9]*x?[a-z]+|metal)$/);
+  if(!m)return null;
+  const fam=m[1], gen=m[2], size=m[3];
+  if(size==='metal')return null;
+  if(fam==='t'){const v=(gen==='2'?T2_VCPU:T_VCPU)[size], r=T_RAM[size]; return (v==null||r==null)?null:{vcpu:v,ram:r};}
+  const v=AWS_SIZE_VCPU[size]; if(v==null)return null;
+  return {vcpu:v,ram:v*(AWS_RATIO[fam]||4)};
+}
+const AZ_RATIO={D:4,E:8,F:2,B:4,M:14,L:8,A:4};
+function azureSpec(type){
+  let s=type.replace(/^Standard_/i,'');
+  const b=s.match(/^B(\d+)(m?s|ms|ls|l)?$/i);
+  if(b){const v=+b[1];const rm={1:1,2:8,4:16,8:32,12:48,16:64,20:80};return {vcpu:v,ram:rm[v]||v*4};}
+  const m=s.match(/^([A-Za-z])(\d+)([a-z]*)(?:_v(\d))?$/);
+  if(!m)return null;
+  const fam=m[1].toUpperCase(); const v=+m[2];
+  return {vcpu:v,ram:v*(AZ_RATIO[fam]||4)};
+}
+function aliSpec(type){
+  const m=type.toLowerCase().match(/^ecs\.([a-z]+\d*[a-z]*)\.([0-9a-z]+)$/);
+  if(!m)return null;
+  const fam=m[1], size=m[2];
+  const v=AWS_SIZE_VCPU[size]; if(v==null)return null;
+  const ratio={g:4,c:2,r:8,u:4,e:4,s:4}[fam[0]]||4;
+  return {vcpu:v,ram:v*ratio};
+}
+function gcpSpec(type){const v=MACHINE_TYPES[type];return v?{vcpu:v.cpu,ram:v.ram,gcpType:type}:null;}
+
+// 在 GCP 机型库中找满足 cpu/ram 且最经济的机型（排除加速器系列）
+function findGcpMachine(cpu,ram){
+  let best=null;
+  for(const k in MACHINE_TYPES){
+    if(k==='custom')continue;
+    if(/^(a2|a3|g2)-/.test(k))continue;
+    const v=MACHINE_TYPES[k];
+    if(v.cpu>=cpu&&v.ram>=ram){
+      const waste=(v.cpu-cpu)*0.03+(v.ram-ram)*0.004;
+      // 迁移映射：优先「满足且最便宜」，价格相同再取超配更少者
+      if(!best||v.price<best.v.price||(v.price===best.v.price&&waste<best.waste))best={k,v,waste};
+    }
+  }
+  return best;
+}
+
+function impCloudWord(s){
+  if(/\b(aws|ec2|s3|ebs|rds|us-east-1|us-west-2|gp[23])\b/i.test(s))return 'AWS';
+  if(/\b(azure|blob|cosmos|eastus|westeurope|standard_)\b/i.test(s))return 'Azure';
+  if(/(阿里|aliyun|alibaba|\boss\b|ecs\.|cn-(hangzhou|beijing|shanghai))/i.test(s))return '阿里云';
+  if(/\b(gcp|gce|us-central1|n[12]-|e2-)\b/i.test(s))return 'GCP';
+  return '通用';
+}
+
+function impParseLine(line){
+  const raw=line.trim();
+  if(!raw||/^#/.test(raw)||/^(type|instance|名称|配置)\b/i.test(raw))return null;
+  let count=1;
+  const cm=raw.match(/(?:^|\s)(\d+)\s*[x×*]\s/i)||raw.match(/[x×*]\s*(\d+)\b/i)||raw.match(/\b(?:count|数量|qty|台|个)\D{0,3}(\d+)/i);
+  if(cm)count=+cm[1]||1;
+  // 1) 计算实例 token
+  const ali=raw.match(/\becs\.[a-z]+\d*\.[0-9a-z]+\b/i);
+  const gcp=raw.match(/\b((?:e2|n1|n2|n2d|n4|t2d|t2a|c2|c2d|c3|c3d|c4|c4a|m1|m2|m3|z3|h3)-[a-z]+-\d+|e2-(?:micro|small|medium)|f1-micro|g1-small)\b/i);
+  const aws=raw.match(/\b([a-z]\d[a-z]*\.(?:[0-9]*x?[a-z]+|metal))\b/i);
+  const az=raw.match(/\b((?:Standard_)?[BDEFLMA]\d+[a-z]*(?:_v\d)?)\b/);
+  let cloud=null,token=null,spec=null;
+  if(ali){token=ali[0];spec=aliSpec(token);cloud='阿里云';}
+  else if(gcp){token=gcp[1];spec=gcpSpec(token.toLowerCase());cloud='GCP';}
+  else if(aws&&awsSpec(aws[1])){token=aws[1];spec=awsSpec(token);cloud='AWS';}
+  else if(az&&(/_v\d/i.test(az[1])||/^(?:Standard_)?B/i.test(az[1]))&&azureSpec(az[1])){token=az[1];spec=azureSpec(token);cloud='Azure';}
+  if(spec)return {raw,count,kind:'compute',cloud,token,vcpu:spec.vcpu,ram:spec.ram,gcpNative:spec.gcpType};
+  // 2) 存储
+  const st=raw.match(/\b(\d+(?:\.\d+)?)\s*(tb|tib|gb|gib)\b/i);
+  if(st&&/\b(s3|ebs|blob|oss|disk|bucket|volume|gp[23]|pd-|efs|nas|filestore|存储|磁盘|对象存储|块存储)\b/i.test(raw)){
+    let size=+st[1]; if(/tb|tib/i.test(st[2]))size*=1024;
+    const block=/\b(ebs|disk|gp[23]|pd-|volume|块存储|磁盘|efs|nas|filestore)\b/i.test(raw);
+    return {raw,count,kind:'storage',cloud:impCloudWord(raw),token:(block?'块存储':'对象存储'),sizeGB:size,
+            target:block?'GCP 平衡型持久磁盘':'Cloud Storage Standard',unit:block?0.10:0.020};
+  }
+  // 3) 显式 vCPU / 内存
+  const vm=raw.match(/(\d+(?:\.\d+)?)\s*(?:vcpu|vcpus|cpu|cores?|核)/i);
+  if(vm){const rm=raw.match(/(\d+(?:\.\d+)?)\s*(?:gib|gb|g内存|内存)/i);
+    return {raw,count,kind:'compute',cloud:impCloudWord(raw),token:vm[1]+'vCPU'+(rm?'/'+rm[1]+'GB':''),vcpu:+vm[1],ram:rm?+rm[1]:+vm[1]*4};}
+  return {raw,count,unrecognized:true};
+}
+
+let IMPORT_ROWS=[];
+function runImport(){
+  const text=(document.getElementById('impText').value||'');
+  const lines=text.split(/\r?\n/);
+  const rows=lines.map(impParseLine).filter(Boolean);
+  const mul=getRegionMul();
+  // 来源云检测
+  const tally={}; rows.forEach(r=>{if(r.cloud&&r.cloud!=='通用')tally[r.cloud]=(tally[r.cloud]||0)+1;});
+  let detected='未知',conf=0; const totCloud=Object.values(tally).reduce((a,b)=>a+b,0);
+  Object.entries(tally).forEach(([c,n])=>{if(n>(tally[detected]||0))detected=c;});
+  if(totCloud)conf=Math.round((tally[detected]||0)/totCloud*100);
+  // 逐行映射 + 计价
+  rows.forEach(r=>{
+    if(r.unrecognized)return;
+    if(r.kind==='storage'){r.monthly=r.sizeGB*r.unit*r.count*mul; return;}
+    const best=findGcpMachine(r.vcpu,r.ram);
+    if(!best){r.noMatch=true;r.monthly=0;return;}
+    r.gcp=best.k; r.gcpCpu=best.v.cpu; r.gcpRam=best.v.ram;
+    r.monthly=best.v.price*730*r.count*mul;
+  });
+  IMPORT_ROWS=rows;
+  const total=rows.reduce((s,r)=>s+(r.monthly||0),0);
+
+  // 渲染：检测
+  const det=document.getElementById('impDetect');
+  if(!rows.length){det.innerHTML='<div class="hint">粘贴或上传清单后点击「识别并估算」。</div>';
+    document.getElementById('impResult').innerHTML='';document.getElementById('impVerify').innerHTML='';document.getElementById('impActions').innerHTML='';return;}
+  det.innerHTML=`<div class="info-box">🔍 识别来源云：<strong>${detected}</strong>（置信度 ${conf}%）　·　目标：GCP（区域 ${region}）　·　共 ${rows.length} 条记录</div>`;
+
+  // 渲染：结果表
+  let html=`<table class="tier-table"><tr><th>来源配置</th><th>云</th><th>规格</th><th>→ GCP 映射</th><th>数量</th><th>月费</th></tr>`;
+  rows.forEach(r=>{
+    if(r.unrecognized){html+=`<tr style="background:#fef7e0"><td colspan="6">⚠️ 未识别：<code>${r.raw}</code></td></tr>`;return;}
+    if(r.kind==='storage'){html+=`<tr><td>${r.token}</td><td>${r.cloud}</td><td>${r.sizeGB}GB</td><td>${r.target}</td><td>${r.count}</td><td>${fmt(r.monthly)}</td></tr>`;return;}
+    const mapCell=r.noMatch?'<span style="color:var(--red)">无匹配机型</span>':`${r.gcp} <span class="prod-desc">(${r.gcpCpu}vCPU/${r.gcpRam}GB)</span>`;
+    html+=`<tr><td><code>${r.token}</code></td><td>${r.cloud}</td><td>${r.vcpu}vCPU/${r.ram}GB</td><td>${mapCell}</td><td>${r.count}</td><td>${fmt(r.monthly)}</td></tr>`;
+  });
+  html+=`<tr style="background:#e8f0fe;font-weight:600"><td colspan="5">合计（GCP 月费估算）</td><td>${fmt(total)}</td></tr></table>`;
+  document.getElementById('impResult').innerHTML=html;
+
+  // 渲染：验算检查
+  importVerify(rows,total,mul);
+
+  // 渲染：操作
+  document.getElementById('impActions').innerHTML=`<button class="btn-add" onclick="addAllImport()">➕ 全部加入费用汇总</button>`;
+}
+
+function importVerify(rows,total,mul){
+  const totalLines=rows.length;
+  const parsed=rows.filter(r=>!r.unrecognized).length;
+  const unrec=rows.filter(r=>r.unrecognized);
+  const noMatch=rows.filter(r=>r.noMatch);
+  // 复算：独立再求和
+  const recompute=rows.reduce((s,r)=>s+(r.monthly||0),0);
+  const sumOk=Math.abs(recompute-total)<1e-6;
+  // 容量满足性：GCP 机型 vCPU/RAM ≥ 源规格
+  const compute=rows.filter(r=>r.kind==='compute'&&!r.noMatch);
+  const undersized=compute.filter(r=>r.gcpCpu<r.vcpu||r.gcpRam<r.ram);
+  const checks=[];
+  checks.push([parsed===totalLines,`解析率：${parsed}/${totalLines} 条记录已识别`]);
+  checks.push([undersized.length===0,`容量满足性：${compute.length} 个计算实例的 GCP 机型 vCPU/内存均 ≥ 源规格${undersized.length?`（${undersized.length} 个不足！）`:''}`]);
+  checks.push([noMatch.length===0,`机型匹配：${noMatch.length===0?'全部找到等效 GCP 机型':noMatch.length+' 个无匹配（规格过大）'}`]);
+  checks.push([sumOk,`总额复算：独立重算 ${fmt(recompute)} ${sumOk?'与展示值一致 ✓':'与展示值不一致 ✗'}`]);
+  checks.push([true,`计价口径：按需价 × 730 小时/月 × 区域系数(${getRegionMul()}×) × 数量`]);
+  let html=`<div class="config-card" style="background:#f8f9fa"><h3>✅ 验算检查</h3>`;
+  checks.forEach(([ok,txt])=>{html+=`<div style="font-size:12px;padding:3px 0;color:${ok?'var(--green)':'var(--red)'}">${ok?'✓':'✗'} ${txt}</div>`;});
+  if(undersized.length){html+=`<div class="info-box" style="background:#fef7e0;border-color:var(--yellow);color:#8a6d00;margin-top:6px">低配行：${undersized.map(r=>r.token).join('、')}</div>`;}
+  if(unrec.length){html+=`<div class="info-box" style="background:#fef7e0;border-color:var(--yellow);color:#8a6d00;margin-top:6px">未识别 ${unrec.length} 行：${unrec.map(r=>r.raw).join(' | ')}</div>`;}
+  html+=`<div class="hint" style="margin-top:6px">假设：估算为满月持续运行、未计承诺折扣/Spot；存储按对象存储 $0.02、块存储 $0.10/GB·月 映射；规格为各云公开标准值近似。</div></div>`;
+  document.getElementById('impVerify').innerHTML=html;
+}
+
+function addAllImport(){
+  let n=0;
+  IMPORT_ROWS.forEach(r=>{
+    if(r.unrecognized||r.noMatch||!r.monthly)return;
+    const name=r.kind==='storage'?`迁移·${r.target}`:`迁移·${r.gcp}`;
+    const label=r.kind==='storage'?`${r.token} ${r.sizeGB}GB ×${r.count}`:`${r.cloud} ${r.token} → ${r.gcp} ×${r.count}`;
+    addItem({productId:'import',name,icon:'📥',label,cost:r.monthly,breakdown:[{k:label,v:r.monthly}]});
+    n++;
+  });
+  if(n)alert(`已将 ${n} 项加入右侧费用汇总。`);
+}
+
+// 上传文件：按扩展名分流。Excel 走 SheetJS（按需联网加载），其余按文本解析
+function impLoadFile(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
+  const name=(f.name||'').toLowerCase();
+  if(/\.(xlsx|xls)$/.test(name)){
+    impEnsureXLSX().then(()=>f.arrayBuffer()).then(buf=>{
+      const wb=XLSX.read(buf,{type:'array'});
+      const csv=XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+      document.getElementById('impText').value=impNormalize(csv);runImport();
+    }).catch(e=>alert('解析 Excel 失败（首次需联网加载解析库）：'+(e&&e.message?e.message:e)));
+    return;
+  }
+  const r=new FileReader();
+  r.onload=()=>{document.getElementById('impText').value=impNormalize(String(r.result||''));runImport();};
+  r.readAsText(f);
+}
+function impEnsureXLSX(){
+  return new Promise((res,rej)=>{
+    if(window.XLSX)return res();
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload=()=>res(); s.onerror=()=>rej(new Error('无法加载 xlsx 解析库'));
+    document.head.appendChild(s);
+  });
+}
+
+// 把多种格式（JSON / YAML / Markdown 表格 / CSV / TSV）规范化为「每行一条」文本
+function impNormalize(txt){
+  const t=(txt||'').trim();
+  if(!t)return txt;
+  // JSON
+  if(t[0]==='{'||t[0]==='['){
+    try{const j=JSON.parse(t);
+      const arr=Array.isArray(j)?j:(Array.isArray(j.resources)?j.resources:(Array.isArray(j.instances)?j.instances:null));
+      if(arr)return arr.map(impJsonRow).join('\n');
+    }catch(e){}
+  }
+  // Markdown 表格
+  if(/^\s*\|.*\|/m.test(t)&&/\|?\s*:?-{3,}/.test(t))return impMarkdown(t);
+  // YAML 列表（- key: value）
+  if(/^\s*-\s+\w+\s*:/m.test(t))return impYAML(t);
+  // CSV / TSV / 竖线分隔（首行含分隔符）
+  const first=t.split(/\r?\n/)[0]||'';
+  if(/[,\t;|]/.test(first))return impCSV(t);
+  return txt; // 纯文本，逐行交给解析器
+}
+function impRow(o){
+  const c=o.count||1;
+  if(o.type)return `${c}x ${o.type}`;
+  if(o.vcpu)return `${c}x ${o.vcpu}vCPU ${o.ram?o.ram+'GB':''}`.trim();
+  return '';
+}
+function impColIdx(h){
+  const f=(...keys)=>h.findIndex(x=>keys.some(k=>x.toLowerCase().includes(k)));
+  return {type:f('type','instance','size','sku','flavor','机型','规格','型号','vmsize'),
+          count:f('count','qty','quantity','数量','台','个','replica'),
+          vcpu:f('vcpu','cpu','core','核'),
+          ram:f('ram','mem','memory','内存')};
+}
+function impCSV(txt){
+  const lines=txt.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length)return txt;
+  const d=/\t/.test(lines[0])?'\t':(/\|/.test(lines[0])?'|':(/;/.test(lines[0])&&!/,/.test(lines[0])?';':','));
+  const cells=l=>l.split(d).map(c=>c.trim().replace(/^["']|["']$/g,''));
+  const head=cells(lines[0]); const idx=impColIdx(head);
+  const hasHeader=Object.values(idx).some(i=>i>=0);
+  const out=[];
+  for(let i=hasHeader?1:0;i<lines.length;i++){
+    const c=cells(lines[i]); if(!c.length)continue;
+    if(hasHeader){
+      const r=impRow({type:idx.type>=0?c[idx.type]:'',count:idx.count>=0?(+c[idx.count]||1):1,
+        vcpu:idx.vcpu>=0?(+c[idx.vcpu]||0):0,ram:idx.ram>=0?(+c[idx.ram]||0):0});
+      out.push(r||lines[i]);
+    } else if(c.length===2&&/^\d+$/.test(c[1])) out.push(`${c[1]}x ${c[0]}`);
+    else out.push(c.join(' '));
+  }
+  return out.join('\n');
+}
+function impMarkdown(txt){
+  const rows=txt.split(/\r?\n/).filter(l=>/\|/.test(l)&&!/^\s*\|?\s*:?-{3,}/.test(l))
+    .map(l=>l.replace(/^\s*\|/,'').replace(/\|\s*$/,''));
+  return impCSV(rows.join('\n'));
+}
+function impYAML(txt){
+  const blocks=txt.split(/^\s*-\s+/m).map(b=>b.trim()).filter(Boolean);
+  const out=[];
+  blocks.forEach(b=>{
+    const g=k=>{const m=b.match(new RegExp(k+'\\s*:\\s*["\\\']?([^"\\\'\\n]+)','i'));return m?m[1].trim():'';};
+    const type=g('type')||g('instanceType')||g('vmSize')||g('size')||g('sku');
+    const count=+g('count')||+g('qty')||+g('replicas')||1;
+    const vcpu=+g('vcpu')||+g('cpu')||0;
+    const ram=+g('ram')||+g('memory')||0;
+    const r=impRow({type,count,vcpu,ram}); if(r)out.push(r);
+  });
+  return out.length?out.join('\n'):txt;
+}
+function impJsonRow(o){
+  if(typeof o!=='object'||!o)return String(o);
+  const type=o.type||o.instanceType||o.InstanceType||o.size||o.vmSize||o.VmSize||o.sku||o.flavor||'';
+  const count=o.count||o.Count||o.quantity||o.qty||o.replicas||1;
+  const vcpu=o.vcpu||o.vCPU||o.cpu||o.cpus||'';
+  const ram=o.ram||o.memory||o.memoryGB||o.ramGB||o.mem||'';
+  if(type)return `${count}x ${type}`;
+  if(vcpu)return `${count}x ${vcpu}vCPU ${ram?ram+'GB':''}`.trim();
+  return JSON.stringify(o);
+}
+
+function renderImport(){
+  const sample="3x m5.xlarge\n2 x t3.medium\nStandard_E4s_v5\necs.c7.2xlarge\n16 vCPU 64GB\nS3 500 GB\nEBS gp3 200GB";
+  return card('📥 配置导入 / 跨云迁移估算',`
+    <p class="hint" style="margin:-6px 0 10px">粘贴或上传其他云（AWS / Azure / 阿里云）或 GCP 的资源清单 → 自动识别来源云、映射到等效 GCP 机型并估算月费，附验算检查。每行一条，支持机型名或「N vCPU M GB」，可带数量前缀如 <code>3x</code>。</p>
+    ${rowFull(fg('上传文件','<input type="file" id="impFile" accept=".csv,.tsv,.json,.txt,.md,.yaml,.yml,.xlsx,.xls" onchange="impLoadFile(event)">','支持 CSV / TSV / JSON / YAML / Markdown 表格 / Excel(.xlsx,.xls) / TXT；CSV/Excel 自动识别 type、count、vCPU、内存 列'))}
+    ${rowFull(fg('或直接粘贴清单','<textarea id="impText" rows="7" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="runImport()" placeholder="'+sample+'"></textarea>'))}
+    <div style="display:flex;gap:8px"><button class="btn-add" onclick="runImport()">🔎 识别并估算</button><button class="export-btn" style="width:auto;margin-top:4px;padding:8px 16px" onclick="document.getElementById('impText').value='${sample.replace(/\n/g,'\\n')}';runImport()">填入示例</button></div>
+    <div id="impDetect" style="margin-top:12px"><div class="hint">粘贴或上传清单后点击「识别并估算」。</div></div>
+    <div id="impResult" style="margin-top:12px"></div>
+    <div id="impVerify" style="margin-top:12px"></div>
+    <div id="impActions" style="margin-top:12px"></div>
+  `);
 }
 
 function renderPlaceholder(){
