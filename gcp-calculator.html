@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Google Cloud 价格计算器</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Google Sans',Roboto,Arial,sans-serif;background:#f8f9fa;color:#202124;min-height:100vh}
+:root{--blue:#1a73e8;--blue-dark:#1557b0;--surface:#fff;--border:#dadce0;--text2:#5f6368;--green:#34a853;--red:#ea4335;--yellow:#fbbc04}
+
+/* Header */
+.header{background:var(--blue);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.header-logo{font-size:20px;font-weight:500;display:flex;align-items:center;gap:8px}
+.header-logo svg{fill:#fff}
+.header-subtitle{font-size:13px;opacity:.8;margin-top:2px}
+
+/* Layout */
+.layout{display:grid;grid-template-columns:260px 1fr 340px;min-height:calc(100vh - 56px)}
+
+/* Sidebar */
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:16px 0;overflow-y:auto}
+.sidebar-title{font-size:11px;font-weight:600;color:var(--text2);padding:8px 16px 4px;text-transform:uppercase;letter-spacing:.8px}
+.product-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;border-radius:0 24px 24px 0;margin-right:8px;transition:background .15s;position:relative}
+.product-item:hover{background:#f1f3f4}
+.product-item.active{background:#e8f0fe;color:var(--blue)}
+.product-item.active .prod-icon{color:var(--blue)}
+.product-item.added::after{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);position:absolute;right:12px;top:50%;transform:translateY(-50%)}
+.prod-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.prod-name{font-size:13px;font-weight:500;line-height:1.3}
+.prod-desc{font-size:11px;color:var(--text2);line-height:1.3}
+.sidebar-sep{height:1px;background:var(--border);margin:8px 0}
+.region-select{padding:8px 16px}
+.region-select label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px}
+.region-select select{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;background:#fff}
+
+/* Main Config Panel */
+.main{padding:24px;overflow-y:auto}
+.panel-header{margin-bottom:20px}
+.panel-header h2{font-size:22px;font-weight:400;display:flex;align-items:center;gap:10px}
+.panel-header p{font-size:13px;color:var(--text2);margin-top:4px}
+.config-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px}
+.config-card h3{font-size:14px;font-weight:600;margin-bottom:14px;color:#202124;display:flex;align-items:center;gap:6px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.form-row.full{grid-template-columns:1fr}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group label{font-size:12px;color:var(--text2);font-weight:500}
+.form-group input,.form-group select{padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;background:#fff;transition:border-color .15s}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(26,115,232,.15)}
+.form-group .hint{font-size:11px;color:var(--text2)}
+.btn-add{display:inline-flex;align-items:center;gap:6px;background:var(--blue);color:#fff;border:none;padding:10px 20px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;transition:background .15s;margin-top:4px}
+.btn-add:hover{background:var(--blue-dark)}
+.btn-add:disabled{background:#dadce0;color:#80868b;cursor:not-allowed}
+.tier-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.tier-table th{background:#f1f3f4;padding:6px 10px;text-align:left;font-weight:600;color:var(--text2)}
+.tier-table td{padding:6px 10px;border-top:1px solid var(--border)}
+.billing-tabs{display:flex;gap:0;margin-bottom:14px;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.billing-tab{flex:1;padding:8px;text-align:center;font-size:12px;font-weight:500;cursor:pointer;background:#fff;border:none;transition:background .15s;color:var(--text2)}
+.billing-tab.active{background:var(--blue);color:#fff}
+.info-box{background:#e8f0fe;border-left:4px solid var(--blue);padding:10px 12px;border-radius:0 4px 4px 0;font-size:12px;color:#1a73e8;margin-top:8px}
+.discount-badge{display:inline-block;background:#e6f4ea;color:var(--green);font-size:11px;padding:2px 6px;border-radius:10px;font-weight:600}
+
+/* Summary Panel */
+.summary{background:var(--surface);border-left:1px solid var(--border);padding:20px;overflow-y:auto;position:sticky;top:56px;height:calc(100vh - 56px)}
+.summary h3{font-size:16px;font-weight:600;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.summary-empty{text-align:center;color:var(--text2);font-size:13px;padding:40px 0}
+.summary-empty .icon{font-size:40px;margin-bottom:8px}
+.total-box{background:linear-gradient(135deg,#1a73e8,#1557b0);color:#fff;border-radius:8px;padding:16px;margin-bottom:16px;text-align:center}
+.total-label{font-size:12px;opacity:.8;margin-bottom:4px}
+.total-amount{font-size:32px;font-weight:300}
+.total-period{font-size:12px;opacity:.8;margin-top:4px}
+.total-annual{font-size:13px;margin-top:8px;opacity:.9}
+.item-list{display:flex;flex-direction:column;gap:8px}
+.summary-item{background:#f8f9fa;border:1px solid var(--border);border-radius:6px;padding:12px}
+.summary-item-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.summary-item-name{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.summary-item-cost{font-size:14px;font-weight:600;color:var(--blue)}
+.summary-item-detail{font-size:11px;color:var(--text2);line-height:1.6}
+.btn-remove{background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0 4px;opacity:.7}
+.btn-remove:hover{opacity:1}
+.btn-clear{background:none;border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer}
+.btn-clear:hover{background:#f1f3f4}
+.breakdown-toggle{font-size:11px;color:var(--blue);cursor:pointer;margin-top:4px;display:inline-block}
+.breakdown-list{margin-top:6px;border-top:1px solid var(--border);padding-top:6px;display:none}
+.breakdown-list.open{display:block}
+.breakdown-row{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:var(--text2)}
+.breakdown-row span:last-child{font-weight:500;color:#202124}
+.currency-row{display:flex;gap:8px;margin-bottom:12px}
+.currency-btn{flex:1;padding:6px;border:1px solid var(--border);background:#fff;border-radius:4px;font-size:12px;cursor:pointer;font-weight:500}
+.currency-btn.active{border-color:var(--blue);color:var(--blue);background:#e8f0fe}
+.export-btn{width:100%;padding:8px;background:#fff;border:1px solid var(--border);border-radius:4px;font-size:13px;cursor:pointer;margin-top:12px;font-weight:500;color:var(--text2)}
+.export-btn:hover{background:#f1f3f4}
+.cud-notice{font-size:11px;color:var(--green);text-align:center;margin-top:8px}
+
+/* Responsive */
+@media(max-width:1100px){.layout{grid-template-columns:220px 1fr 300px}}
+@media(max-width:860px){.layout{grid-template-columns:1fr};.sidebar,.summary{display:none}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+  <div>
+    <div class="header-logo">Google Cloud 价格计算器</div>
+    <div class="header-subtitle">估算您的 GCP 月度费用（价格基于美东区域，仅供参考）</div>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="region-select">
+      <label>计费区域</label>
+      <select id="regionSelect" onchange="onRegionChange()">
+        <optgroup label="北美洲">
+          <option value="us-central1">us-central1（爱荷华）</option>
+          <option value="us-east1">us-east1（南卡罗来纳）</option>
+          <option value="us-east4">us-east4（北弗吉尼亚）</option>
+          <option value="us-east5">us-east5（哥伦布）</option>
+          <option value="us-south1">us-south1（达拉斯）</option>
+          <option value="us-west1">us-west1（俄勒冈）</option>
+          <option value="us-west2">us-west2（洛杉矶）</option>
+          <option value="us-west3">us-west3（盐湖城）</option>
+          <option value="us-west4">us-west4（拉斯维加斯）</option>
+          <option value="northamerica-northeast1">northamerica-northeast1（蒙特利尔）</option>
+          <option value="northamerica-northeast2">northamerica-northeast2（多伦多）</option>
+          <option value="northamerica-south1">northamerica-south1（墨西哥）</option>
+        </optgroup>
+        <optgroup label="南美洲">
+          <option value="southamerica-east1">southamerica-east1（圣保罗）</option>
+          <option value="southamerica-west1">southamerica-west1（圣地亚哥）</option>
+        </optgroup>
+        <optgroup label="欧洲">
+          <option value="europe-central2">europe-central2（华沙）</option>
+          <option value="europe-north1">europe-north1（芬兰）</option>
+          <option value="europe-north2">europe-north2（斯德哥尔摩）</option>
+          <option value="europe-southwest1">europe-southwest1（马德里）</option>
+          <option value="europe-west1">europe-west1（比利时）</option>
+          <option value="europe-west2">europe-west2（伦敦）</option>
+          <option value="europe-west3">europe-west3（法兰克福）</option>
+          <option value="europe-west4">europe-west4（荷兰）</option>
+          <option value="europe-west6">europe-west6（苏黎世）</option>
+          <option value="europe-west8">europe-west8（米兰）</option>
+          <option value="europe-west9">europe-west9（巴黎）</option>
+          <option value="europe-west10">europe-west10（柏林）</option>
+          <option value="europe-west12">europe-west12（都灵）</option>
+        </optgroup>
+        <optgroup label="中东">
+          <option value="me-central1">me-central1（多哈）</option>
+          <option value="me-central2">me-central2（达曼）</option>
+          <option value="me-west1">me-west1（特拉维夫）</option>
+        </optgroup>
+        <optgroup label="亚太">
+          <option value="asia-east1">asia-east1（台湾）</option>
+          <option value="asia-east2">asia-east2（香港）</option>
+          <option value="asia-northeast1">asia-northeast1（东京）</option>
+          <option value="asia-northeast2">asia-northeast2（大阪）</option>
+          <option value="asia-northeast3">asia-northeast3（首尔）</option>
+          <option value="asia-south1">asia-south1（孟买）</option>
+          <option value="asia-south2">asia-south2（德里）</option>
+          <option value="asia-southeast1">asia-southeast1（新加坡）</option>
+          <option value="asia-southeast2">asia-southeast2（雅加达）</option>
+          <option value="australia-southeast1">australia-southeast1（悉尼）</option>
+          <option value="australia-southeast2">australia-southeast2（墨尔本）</option>
+        </optgroup>
+        <optgroup label="非洲">
+          <option value="africa-south1">africa-south1（约翰内斯堡）</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="sidebar-sep"></div>
+    <div class="sidebar-title">计算产品</div>
+    <div id="productList"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="main" id="mainPanel">
+    <div style="text-align:center;padding:80px 40px;color:var(--text2)">
+      <div style="font-size:48px;margin-bottom:16px">☁️</div>
+      <div style="font-size:18px;font-weight:500;margin-bottom:8px;color:#202124">选择左侧产品开始计算</div>
+      <div style="font-size:13px">支持 Compute Engine、Cloud Storage、Cloud SQL、BigQuery 等主流产品</div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary">
+    <div class="currency-row">
+      <button class="currency-btn active" onclick="setCurrency('USD',this)">USD $</button>
+      <button class="currency-btn" onclick="setCurrency('CNY',this)">CNY ¥</button>
+    </div>
+    <h3>费用汇总 <button class="btn-clear" onclick="clearAll()">清空</button></h3>
+    <div id="summaryContent">
+      <div class="summary-empty"><div class="icon">🧮</div>添加产品后，费用将在此汇总</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Pricing Data ─────────────────────────────────────────────────────────
+// 区域价格系数（相对美国基准区域 us-central1 = 1.00 的近似比例，仅供估算参考）
+const REGION_MULTIPLIER = {
+  // 北美洲
+  'us-central1':1.00,'us-east1':1.00,'us-east4':1.00,'us-east5':1.00,
+  'us-south1':1.02,'us-west1':1.00,'us-west2':1.12,'us-west3':1.12,'us-west4':1.10,
+  'northamerica-northeast1':1.05,'northamerica-northeast2':1.05,'northamerica-south1':1.08,
+  // 南美洲
+  'southamerica-east1':1.25,'southamerica-west1':1.20,
+  // 欧洲
+  'europe-central2':1.10,'europe-north1':1.05,'europe-north2':1.05,'europe-southwest1':1.06,
+  'europe-west1':1.08,'europe-west2':1.12,'europe-west3':1.12,'europe-west4':1.08,
+  'europe-west6':1.15,'europe-west8':1.10,'europe-west9':1.12,'europe-west10':1.14,'europe-west12':1.10,
+  // 中东
+  'me-central1':1.12,'me-central2':1.12,'me-west1':1.12,
+  // 亚太
+  'asia-east1':1.10,'asia-east2':1.15,'asia-northeast1':1.15,'asia-northeast2':1.16,'asia-northeast3':1.12,
+  'asia-south1':1.10,'asia-south2':1.10,'asia-southeast1':1.12,'asia-southeast2':1.14,
+  'australia-southeast1':1.22,'australia-southeast2':1.22,
+  // 非洲
+  'africa-south1':1.18,
+};
+
+const PRODUCTS = [
+  {id:'compute',name:'Compute Engine',desc:'虚拟机实例',icon:'🖥️',category:'计算'},
+  {id:'gke',name:'Google Kubernetes Engine',desc:'容器编排',icon:'☸️',category:'计算'},
+  {id:'cloudrun',name:'Cloud Run',desc:'无服务器容器',icon:'🚀',category:'计算'},
+  {id:'cloudfunctions',name:'Cloud Functions',desc:'事件驱动函数',icon:'⚡',category:'计算'},
+  {id:'storage',name:'Cloud Storage',desc:'对象存储',icon:'🗄️',category:'存储'},
+  {id:'filestore',name:'Filestore',desc:'托管 NFS',icon:'📁',category:'存储'},
+  {id:'cloudsql',name:'Cloud SQL',desc:'托管关系型数据库',icon:'🛢️',category:'数据库'},
+  {id:'spanner',name:'Cloud Spanner',desc:'全球分布式数据库',icon:'🌐',category:'数据库'},
+  {id:'bigquery',name:'BigQuery',desc:'数据仓库分析',icon:'📊',category:'大数据'},
+  {id:'pubsub',name:'Pub/Sub',desc:'消息队列',icon:'📨',category:'消息'},
+  {id:'cloudcdn',name:'Cloud CDN',desc:'内容分发网络',icon:'🌍',category:'网络'},
+  {id:'loadbalancer',name:'Cloud Load Balancing',desc:'负载均衡',icon:'⚖️',category:'网络'},
+  {id:'cloudnat',name:'Cloud NAT',desc:'网络地址转换',icon:'🔀',category:'网络'},
+  {id:'memorystoreredis',name:'Memorystore (Redis)',desc:'托管 Redis',icon:'🔴',category:'数据库'},
+  {id:'cloudlogging',name:'Cloud Logging',desc:'日志管理',icon:'📋',category:'运维'},
+  {id:'cloudmonitoring',name:'Cloud Monitoring',desc:'监控告警',icon:'📈',category:'运维'},
+];
+
+// Machine types for Compute Engine — 全系列，价格为 us-central1 按需近似价 (USD/小时)
+// 通用 CPU 系列按「每 vCPU 单价 + 每 GB 内存单价」生成各预定义规格；
+// 内存优化/HPC/加速器/存储优化系列为显式条目（价格已含 GPU/本地SSD 等捆绑组件）。
+const MACHINE_TYPES = {};
+const MACHINE_GROUPS = [];
+(function buildMachineTypes(){
+  const fams = [
+    {key:'e2', label:'E2 · 通用（成本优化, x86）', cpu:0.021811, ram:0.002923,
+      shared:[['e2-micro',0.25,1,0.008376],['e2-small',0.5,2,0.016751],['e2-medium',1,4,0.033503]],
+      ratio:{standard:4,highmem:8,highcpu:1},
+      sizes:{standard:[2,4,8,16,32],highmem:[2,4,8,16],highcpu:[2,4,8,16,32]}},
+    {key:'n1', label:'N1 · 通用（第一代, x86）', cpu:0.031611, ram:0.004237,
+      shared:[['f1-micro',0.2,0.6,0.0076],['g1-small',0.5,1.7,0.0257]],
+      ratio:{standard:3.75,highmem:6.5,highcpu:0.9},
+      sizes:{standard:[1,2,4,8,16,32,64,96],highmem:[2,4,8,16,32,64,96],highcpu:[2,4,8,16,32,64,96]}},
+    {key:'n2', label:'N2 · 通用（均衡, Intel）', cpu:0.031611, ram:0.004237,
+      ratio:{standard:4,highmem:8,highcpu:1},
+      sizes:{standard:[2,4,8,16,32,48,64,80,96,128],highmem:[2,4,8,16,32,48,64,80,96,128],highcpu:[2,4,8,16,32,48,64,80,96]}},
+    {key:'n2d', label:'N2D · 通用（AMD EPYC）', cpu:0.027502, ram:0.003686,
+      ratio:{standard:4,highmem:8,highcpu:1},
+      sizes:{standard:[2,4,8,16,32,48,64,80,96,128,224],highmem:[2,4,8,16,32,48,64,80,96],highcpu:[2,4,8,16,32,48,64,80,96,128,224]}},
+    {key:'n4', label:'N4 · 通用（最新, Intel）', cpu:0.0309, ram:0.00349,
+      ratio:{standard:4,highmem:8,highcpu:2},
+      sizes:{standard:[2,4,8,16,32,48,64,80],highmem:[2,4,8,16,32,48,64,80],highcpu:[2,4,8,16,32,48,64,80]}},
+    {key:'t2d', label:'T2D · 扩展（AMD, 高性价比）', cpu:0.027248, ram:0.00365,
+      ratio:{standard:4},
+      sizes:{standard:[1,2,4,8,16,32,48,60]}},
+    {key:'t2a', label:'T2A · Arm（Ampere Altra）', cpu:0.0231, ram:0.0031,
+      ratio:{standard:4},
+      sizes:{standard:[1,2,4,8,16,32,48]}},
+    {key:'c2', label:'C2 · 计算优化（Intel）', cpu:0.03398, ram:0.00455,
+      ratio:{standard:4},
+      sizes:{standard:[4,8,16,30,60]}},
+    {key:'c2d', label:'C2D · 计算优化（AMD）', cpu:0.029563, ram:0.003959,
+      ratio:{standard:4,highmem:8,highcpu:2},
+      sizes:{standard:[2,4,8,16,32,56,112],highmem:[2,4,8,16,32,56,112],highcpu:[2,4,8,16,32,56,112]}},
+    {key:'c3', label:'C3 · 计算优化（最新, Intel）', cpu:0.03465, ram:0.00468,
+      ratio:{standard:4,highmem:8,highcpu:2},
+      sizes:{standard:[4,8,22,44,88,176],highmem:[4,8,22,44,88,176],highcpu:[4,8,22,44,88,176]}},
+    {key:'c3d', label:'C3D · 计算优化（最新, AMD）', cpu:0.03118, ram:0.00421,
+      ratio:{standard:4,highmem:8,highcpu:2},
+      sizes:{standard:[4,8,16,30,60,90,180,360],highmem:[4,8,16,30,60,90,180,360],highcpu:[4,8,16,30,60,90,180,360]}},
+    {key:'c4', label:'C4 · 性能优化（最新, Intel）', cpu:0.0376, ram:0.00425,
+      ratio:{standard:4,highmem:8,highcpu:2},
+      sizes:{standard:[2,4,8,16,32,48,96,192],highmem:[2,4,8,16,32,48,96,192],highcpu:[2,4,8,16,32,48,96,192]}},
+    {key:'c4a', label:'C4A · 性能优化（Google Axion Arm）', cpu:0.0308, ram:0.00357,
+      ratio:{standard:4,highmem:8,highcpu:2},
+      sizes:{standard:[2,4,8,16,32,48,64,72],highmem:[2,4,8,16,32,48,64,72],highcpu:[2,4,8,16,32,48,64,72]}},
+  ];
+  function add(group,name,cpu,ram,price){
+    MACHINE_TYPES[name]={cpu,ram,price:+(+price).toFixed(5)};
+    group.items.push(name);
+  }
+  fams.forEach(f=>{
+    const g={label:f.label,items:[]};
+    (f.shared||[]).forEach(([n,c,r,p])=>add(g,n,c,r,p));
+    ['standard','highmem','highcpu'].forEach(kind=>{
+      const sizes=f.sizes[kind]; if(!sizes)return;
+      const ratio=f.ratio[kind];
+      sizes.forEach(n=>{
+        const ram=+(n*ratio).toFixed(2);
+        add(g,`${f.key}-${kind}-${n}`,n,ram,f.cpu*n+f.ram*ram);
+      });
+    });
+    MACHINE_GROUPS.push(g);
+  });
+  // 显式系列（价格已含捆绑的 GPU / 本地 SSD 等）
+  const special=[
+    {label:'H3 · HPC（Intel）', items:[['h3-standard-88',88,352,3.5640]]},
+    {label:'M1 · 内存优化（超大内存）', items:[
+      ['m1-megamem-96',96,1433.6,10.6740],['m1-ultramem-40',40,961,6.3030],
+      ['m1-ultramem-80',80,1922,12.6060],['m1-ultramem-160',160,3844,25.2110]]},
+    {label:'M2 · 内存优化（超大内存）', items:[
+      ['m2-megamem-416',416,5888,50.0510],['m2-hypermem-416',416,8832,67.2150],
+      ['m2-ultramem-208',208,5888,42.1900],['m2-ultramem-416',416,11776,84.3790]]},
+    {label:'M3 · 内存优化（最新）', items:[
+      ['m3-megamem-64',64,976,7.4630],['m3-megamem-128',128,1952,14.9260],
+      ['m3-ultramem-32',32,976,5.0660],['m3-ultramem-64',64,1952,10.1310],['m3-ultramem-128',128,3904,20.2620]]},
+    {label:'Z3 · 存储优化（含本地 SSD）', items:[
+      ['z3-highmem-88',88,704,6.0000],['z3-highmem-176',176,1408,12.0000]]},
+    {label:'G2 · 加速器（含 NVIDIA L4 GPU）', items:[
+      ['g2-standard-4',4,16,0.8500],['g2-standard-8',8,32,1.0000],['g2-standard-12',12,48,1.1600],
+      ['g2-standard-16',16,64,1.3200],['g2-standard-24',24,96,2.0000],['g2-standard-32',32,128,1.9500],
+      ['g2-standard-48',48,192,3.9000],['g2-standard-96',96,384,7.8000]]},
+    {label:'A2 · 加速器（含 NVIDIA A100 GPU）', items:[
+      ['a2-highgpu-1g',12,85,3.6740],['a2-highgpu-2g',24,170,7.3490],['a2-highgpu-4g',48,340,14.6980],
+      ['a2-highgpu-8g',96,680,29.3870],['a2-megagpu-16g',96,1360,55.7390],
+      ['a2-ultragpu-1g',12,170,5.0680],['a2-ultragpu-2g',24,340,10.1360],
+      ['a2-ultragpu-4g',48,680,20.2730],['a2-ultragpu-8g',96,1360,40.5450]]},
+    {label:'A3 · 加速器（含 NVIDIA H100 GPU）', items:[
+      ['a3-highgpu-8g',208,1872,87.7100],['a3-megagpu-8g',208,1872,91.0000]]},
+  ];
+  special.forEach(s=>{
+    const g={label:s.label,items:[]};
+    s.items.forEach(([n,c,r,p])=>{MACHINE_TYPES[n]={cpu:c,ram:r,price:p};g.items.push(n);});
+    MACHINE_GROUPS.push(g);
+  });
+  MACHINE_TYPES['custom']={cpu:0,ram:0,price:0};
+})();
+
+const DISK_PRICES = {pd_standard:0.04,pd_balanced:0.1,pd_ssd:0.17,pd_extreme:0.125};
+const GPU_PRICES = {'none':0,'t4':0.35,'v100':2.48,'a100':3.67,'p100':1.46};
+
+// ─── State ─────────────────────────────────────────────────────────────────
+let currency = 'USD';
+let region = 'us-central1';
+let cartItems = [];
+let activeProduct = null;
+
+const USD_TO_CNY = 7.25;
+
+function fmt(usd){
+  const v = currency==='CNY'? usd*USD_TO_CNY : usd;
+  const sym = currency==='CNY'?'¥':'$';
+  return sym + v.toFixed(2);
+}
+
+function getRegionMul(){return REGION_MULTIPLIER[region]||1}
+
+// ─── Sidebar ───────────────────────────────────────────────────────────────
+function renderSidebar(){
+  const categories = [...new Set(PRODUCTS.map(p=>p.category))];
+  const el = document.getElementById('productList');
+  el.innerHTML = categories.map(cat=>`
+    <div class="sidebar-title" style="margin-top:8px">${cat}</div>
+    ${PRODUCTS.filter(p=>p.category===cat).map(p=>`
+      <div class="product-item ${activeProduct===p.id?'active':''} ${cartItems.some(i=>i.productId===p.id)?'added':''}"
+           onclick="selectProduct('${p.id}')">
+        <div class="prod-icon">${p.icon}</div>
+        <div><div class="prod-name">${p.name}</div><div class="prod-desc">${p.desc}</div></div>
+      </div>
+    `).join('')}
+  `).join('');
+}
+
+function selectProduct(id){
+  activeProduct = id;
+  renderSidebar();
+  renderConfig(id);
+}
+
+function onRegionChange(){
+  region = document.getElementById('regionSelect').value;
+  renderSummary();
+}
+
+// ─── Config Panels ─────────────────────────────────────────────────────────
+function renderConfig(id){
+  const prod = PRODUCTS.find(p=>p.id===id);
+  const el = document.getElementById('mainPanel');
+  const renderers = {
+    compute:renderCompute, gke:renderGKE, cloudrun:renderCloudRun,
+    cloudfunctions:renderCloudFunctions, storage:renderStorage,
+    filestore:renderFilestore, cloudsql:renderCloudSQL, spanner:renderSpanner,
+    bigquery:renderBigQuery, pubsub:renderPubSub, cloudcdn:renderCloudCDN,
+    loadbalancer:renderLoadBalancer, cloudnat:renderCloudNAT,
+    memorystoreredis:renderMemorystore, cloudlogging:renderLogging,
+    cloudmonitoring:renderMonitoring
+  };
+  el.innerHTML = `
+    <div class="panel-header">
+      <h2>${prod.icon} ${prod.name}</h2>
+      <p>${prod.desc} — 配置参数后点击"添加到计算"</p>
+    </div>
+    ${(renderers[id]||renderPlaceholder)()}
+  `;
+}
+
+function card(title, body){
+  return `<div class="config-card"><h3>${title}</h3>${body}</div>`;
+}
+function row(...fields){return `<div class="form-row">${fields.join('')}</div>`}
+function rowFull(...fields){return `<div class="form-row full">${fields.join('')}</div>`}
+function fg(label,input,hint=''){
+  return `<div class="form-group"><label>${label}</label>${input}${hint?`<div class="hint">${hint}</div>`:''}</div>`
+}
+function sel(id,opts,onc='onUpdate()'){
+  return `<select id="${id}" onchange="${onc}">${opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>`
+}
+// 按系列分组的机型下拉框（optgroup）
+function machineSelect(id,onc,includeCustom=true){
+  let html=`<select id="${id}" onchange="${onc}">`;
+  MACHINE_GROUPS.forEach(g=>{
+    html+=`<optgroup label="${g.label}">`;
+    g.items.forEach(k=>{const v=MACHINE_TYPES[k];html+=`<option value="${k}">${k} · ${v.cpu}vCPU/${v.ram}GB</option>`;});
+    html+=`</optgroup>`;
+  });
+  if(includeCustom) html+=`<optgroup label="自定义"><option value="custom">自定义 vCPU/内存</option></optgroup>`;
+  html+=`</select>`;
+  return html;
+}
+function num(id,val,min=0,step=1){
+  return `<input type="number" id="${id}" value="${val}" min="${min}" step="${step}" oninput="onUpdate()">`
+}
+// 数字输入框（输入时触发机型匹配，用于智能匹配模块）
+function num2(id,val,min=0,step=1){
+  return `<input type="number" id="${id}" value="${val}" min="${min}" step="${step}" oninput="matchMachines()">`
+}
+// 数字输入框（输入时刷新 Cloud SQL 预估）
+function numS(id,val,min=0,step=1){
+  return `<input type="number" id="${id}" value="${val}" min="${min}" step="${step}" oninput="sqlPreview()">`
+}
+function addBtn(onclick){
+  return `<div style="margin-top:8px"><button class="btn-add" onclick="${onclick}">➕ 添加到计算</button></div>`
+}
+
+// Compute Engine
+function renderCompute(){
+  const famOpts=[['any','任意系列']].concat(MACHINE_GROUPS.map((g,i)=>[String(i),g.label]));
+  const html=card('🔍 智能匹配机型',`
+    <p class="hint" style="margin:-6px 0 10px">输入需要的 vCPU 与内存，自动匹配满足需求且最经济的机型；点击结果即可一键填入下方配置。</p>
+    ${row(
+      fg('目标 vCPU',num2('mmCPU',4,1,1),'需要的最小核心数'),
+      fg('目标内存 (GB)',num2('mmRAM',16,1,1),'需要的最小内存')
+    )}
+    ${rowFull(fg('系列偏好',sel('mmFam',famOpts,'matchMachines()')))}
+    <div style="margin-top:4px"><button class="btn-add" onclick="matchMachines()">🔎 查找匹配机型</button></div>
+    <div id="mmResults" style="margin-top:12px"></div>
+  `)+card('实例配置',`
+    ${row(
+      fg('机器类型',machineSelect('ceType','onCETypeChange()'),'加速器/内存优化系列价格已含 GPU/超大内存'),
+      fg('实例数量',num('ceCount',1,1))
+    )}
+    <div id="customCPURam" style="display:none">
+      ${row(fg('vCPU',num('ceCPU',4,1)),fg('内存 (GB)',num('ceRAM',16,1)))}
+    </div>
+    ${row(
+      fg('计费模式',sel('ceBilling',[['od','按需（On-Demand）'],['cud1','承诺使用 1 年 (-37%)'],['cud3','承诺使用 3 年 (-55%)'],['spot','Spot/抢占实例 (-60~91%)']],'onUpdate()')),
+      fg('每月使用时长 (小时)',num('ceHours',730,1,1),'满月≈730小时')
+    )}
+    ${row(
+      fg('操作系统',sel('ceOS',[['free','Linux（免费）'],['windows','Windows Server (+$0.04/vCPU/h)'],['rhel','RHEL (+$0.06/vCPU/h)'],['sles','SLES (+$0.04/vCPU/h)']],'onUpdate()')),
+      fg('GPU 类型',sel('ceGPU',[['none','无 GPU'],['t4','NVIDIA T4'],['v100','NVIDIA V100'],['a100','NVIDIA A100'],['p100','NVIDIA P100']],'onUpdate()'))
+    )}
+    ${row(
+      fg('GPU 数量',num('ceGPUCount',1,1)),
+      fg('启动磁盘类型',sel('ceDiskType',[['pd_standard','标准永久磁盘 HDD'],['pd_balanced','平衡永久磁盘'],['pd_ssd','SSD 永久磁盘'],['pd_extreme','极致 SSD']],'onUpdate()'))
+    )}
+    ${row(
+      fg('启动磁盘大小 (GB)',num('ceDisk',50,10,10)),
+      fg('额外本地 SSD (GB)',num('ceLocalSSD',0,0,375),'每块375GB，$0.08/GB/月')
+    )}
+    <div class="info-box" id="ceInfo">费用预估加载中...</div>
+    ${addBtn('addCompute()')}
+  `);
+  setTimeout(()=>{onUpdate();matchMachines();},0);
+  return html;
+}
+
+function onCETypeChange(){
+  const t=document.getElementById('ceType').value;
+  document.getElementById('customCPURam').style.display=t==='custom'?'':'none';
+  onUpdate();
+}
+
+// ─── 智能匹配机型 ──────────────────────────────────────────────────────────
+function matchMachines(){
+  const box=document.getElementById('mmResults');
+  if(!box)return;
+  const tCpu=+document.getElementById('mmCPU').value||0;
+  const tRam=+document.getElementById('mmRAM').value||0;
+  const famSel=document.getElementById('mmFam').value;
+  const mul=getRegionMul();
+
+  // 候选机型：满足 cpu/内存 下限的机型；可按系列偏好过滤
+  let allowed=null;
+  if(famSel!=='any'){const g=MACHINE_GROUPS[+famSel];allowed=g?new Set(g.items):new Set();}
+  const fits=[];
+  Object.entries(MACHINE_TYPES).forEach(([k,v])=>{
+    if(k==='custom')return;
+    if(allowed&&!allowed.has(k))return;
+    if(v.cpu>=tCpu&&v.ram>=tRam){
+      // 评分：超配越少越好（按价格权重折算的浪费量），价格次之
+      const waste=(v.cpu-tCpu)*0.03+(v.ram-tRam)*0.004;
+      fits.push({k,v,waste});
+    }
+  });
+  fits.sort((a,b)=> a.waste-b.waste || a.v.price-b.v.price);
+
+  if(tCpu<=0&&tRam<=0){box.innerHTML='<div class="hint">请输入目标 vCPU 或内存。</div>';return;}
+
+  let html='';
+  if(fits.length===0){
+    html+=`<div class="info-box" style="background:#fef7e0;border-color:var(--yellow);color:#8a6d00">
+      没有满足条件的预定义机型（需求过大或系列限制）。可使用自定义规格 👇</div>`;
+  }else{
+    html+=`<div class="hint" style="margin-bottom:6px">为 ≥${tCpu||0}vCPU / ≥${tRam||0}GB 找到 ${fits.length} 个机型，按匹配度排序（前 6 个）：</div>`;
+    html+=`<table class="tier-table"><tr><th>机型</th><th>vCPU</th><th>内存</th><th>预估/小时</th><th></th></tr>`;
+    fits.slice(0,6).forEach((f,i)=>{
+      const exact=(f.v.cpu===tCpu&&f.v.ram===tRam);
+      html+=`<tr${i===0?' style="background:#e6f4ea"':''}>
+        <td><strong>${f.k}</strong>${i===0?' <span class="discount-badge">最佳</span>':''}${exact?' <span class="discount-badge">精确</span>':''}</td>
+        <td>${f.v.cpu}</td><td>${f.v.ram}GB</td>
+        <td>${fmt(f.v.price*mul)}</td>
+        <td><button class="btn-clear" onclick="applyMatch('${f.k}')">选用</button></td>
+      </tr>`;
+    });
+    html+=`</table>`;
+  }
+  // 始终提供自定义精确匹配选项
+  html+=`<div style="margin-top:10px"><button class="export-btn" style="margin-top:0"
+    onclick="applyCustomMatch(${tCpu||1},${tRam||1})">⚙️ 用自定义规格精确匹配 ${tCpu||1}vCPU / ${tRam||1}GB</button></div>`;
+  box.innerHTML=html;
+}
+
+function applyMatch(k){
+  const sel=document.getElementById('ceType');
+  sel.value=k;
+  document.getElementById('customCPURam').style.display='none';
+  onUpdate();
+  flashInfo(`已选用机型：${k}`);
+}
+
+function applyCustomMatch(cpu,ram){
+  document.getElementById('ceType').value='custom';
+  document.getElementById('customCPURam').style.display='';
+  document.getElementById('ceCPU').value=cpu;
+  document.getElementById('ceRAM').value=ram;
+  onUpdate();
+  flashInfo(`已设为自定义：${cpu}vCPU / ${ram}GB`);
+}
+
+function flashInfo(msg){
+  const el=document.getElementById('ceInfo');
+  if(!el)return;
+  const prev=el.innerHTML;
+  el.innerHTML=`✅ ${msg} —— `+prev;
+}
+
+// ─── 通用智能匹配组件（GKE / Cloud SQL 等有规格选择的产品复用）──────────────
+const MATCH_REG={};
+// opts: {groups:[{label,items:[key]}], pool:{key:{cpu,ram,price}}, targetSel, onApply(key), defCpu, defRam, hint, title}
+function matchUI(ns,opts){
+  MATCH_REG[ns]=opts;
+  const famOpts=opts.groups.map((g,i)=>`<option value="${i}">${g.label}</option>`).join('');
+  return card(opts.title||'🔍 智能匹配规格',`
+    <p class="hint" style="margin:-6px 0 10px">${opts.hint||'输入需要的 vCPU 与内存，自动匹配满足需求且最经济的规格，点击结果即可填入下方。'}</p>
+    ${row(
+      fg('目标 vCPU',`<input type="number" id="${ns}CPU" value="${opts.defCpu||2}" min="1" step="1" oninput="runMatch('${ns}')">`,'最小核心数'),
+      fg('目标内存 (GB)',`<input type="number" id="${ns}RAM" value="${opts.defRam||8}" min="1" step="0.5" oninput="runMatch('${ns}')">`,'最小内存')
+    )}
+    ${rowFull(fg('系列偏好',`<select id="${ns}Fam" onchange="runMatch('${ns}')"><option value="any">任意系列</option>${famOpts}</select>`))}
+    <div style="margin-top:4px"><button class="btn-add" onclick="runMatch('${ns}')">🔎 查找匹配规格</button></div>
+    <div id="${ns}Results" style="margin-top:12px"></div>
+  `);
+}
+function runMatch(ns){
+  const o=MATCH_REG[ns]; if(!o)return;
+  const box=document.getElementById(ns+'Results'); if(!box)return;
+  const tCpu=+document.getElementById(ns+'CPU').value||0;
+  const tRam=+document.getElementById(ns+'RAM').value||0;
+  const famSel=document.getElementById(ns+'Fam').value;
+  const mul=getRegionMul();
+  let allowed=null;
+  if(famSel!=='any'){const g=o.groups[+famSel];allowed=g?new Set(g.items):new Set();}
+  const fits=[];
+  o.groups.forEach(g=>g.items.forEach(k=>{
+    if(allowed&&!allowed.has(k))return;
+    const v=o.pool[k]; if(!v)return;
+    if(v.cpu>=tCpu&&v.ram>=tRam) fits.push({k,v,waste:(v.cpu-tCpu)*0.03+(v.ram-tRam)*0.004});
+  }));
+  fits.sort((a,b)=>a.waste-b.waste||a.v.price-b.v.price);
+  if(tCpu<=0&&tRam<=0){box.innerHTML='<div class="hint">请输入目标 vCPU 或内存。</div>';return;}
+  let html='';
+  if(fits.length===0){
+    html=`<div class="info-box" style="background:#fef7e0;border-color:var(--yellow);color:#8a6d00">没有满足条件的规格（需求过大或系列限制），可放宽条件或选择更大规格。</div>`;
+  }else{
+    html+=`<div class="hint" style="margin-bottom:6px">为 ≥${tCpu||0}vCPU / ≥${tRam||0}GB 找到 ${fits.length} 个规格（前 6 个）：</div>`;
+    html+=`<table class="tier-table"><tr><th>规格</th><th>vCPU</th><th>内存</th><th>预估/小时</th><th></th></tr>`;
+    fits.slice(0,6).forEach((f,i)=>{
+      const exact=(f.v.cpu===tCpu&&f.v.ram===tRam);
+      html+=`<tr${i===0?' style="background:#e6f4ea"':''}><td><strong>${f.k}</strong>${i===0?' <span class="discount-badge">最佳</span>':''}${exact?' <span class="discount-badge">精确</span>':''}</td><td>${f.v.cpu}</td><td>${f.v.ram}GB</td><td>${fmt(f.v.price*mul)}</td><td><button class="btn-clear" onclick="applyMatchGeneric('${ns}','${f.k}')">选用</button></td></tr>`;
+    });
+    html+=`</table>`;
+  }
+  box.innerHTML=html;
+}
+function applyMatchGeneric(ns,k){
+  const o=MATCH_REG[ns]; if(!o)return;
+  const sel=document.getElementById(o.targetSel); if(sel) sel.value=k;
+  if(typeof o.onApply==='function') o.onApply(k);
+}
+
+function calcCompute(){
+  const type=document.getElementById('ceType').value;
+  const count=+document.getElementById('ceCount').value||1;
+  const hours=+document.getElementById('ceHours').value||730;
+  const billing=document.getElementById('ceBilling').value;
+  const os=document.getElementById('ceOS').value;
+  const gpu=document.getElementById('ceGPU').value;
+  const gpuCount=+document.getElementById('ceGPUCount').value||1;
+  const diskType=document.getElementById('ceDiskType').value;
+  const disk=+document.getElementById('ceDisk').value||50;
+  const lssd=+document.getElementById('ceLocalSSD').value||0;
+
+  let baseHr=0,cpu=0,ram=0;
+  if(type==='custom'){
+    cpu=+document.getElementById('ceCPU').value||4;
+    ram=+document.getElementById('ceRAM').value||16;
+    baseHr=(cpu*0.033174+ram*0.004446);
+  } else {
+    const m=MACHINE_TYPES[type];
+    baseHr=m.price; cpu=m.cpu; ram=m.ram;
+  }
+
+  const discount={od:1,cud1:0.63,cud3:0.45,spot:0.15};
+  baseHr*=discount[billing]||1;
+
+  // OS surcharge
+  let osSur=0;
+  if(os==='windows') osSur=cpu*0.04;
+  else if(os==='rhel') osSur=cpu*0.06;
+  else if(os==='sles') osSur=cpu*0.04;
+
+  const gpuCost=(gpu!=='none'?GPU_PRICES[gpu]*gpuCount*hours:0);
+  const computeCost=(baseHr+osSur)*hours*count;
+  const diskCost=DISK_PRICES[diskType]*disk*count;
+  const lssdCost=lssd*0.08*count;
+  const mul=getRegionMul();
+
+  return {
+    computeCost:computeCost*mul, gpuCost:gpuCost*mul,
+    diskCost:diskCost*mul, lssdCost:lssdCost*mul,
+    total:(computeCost+gpuCost+diskCost+lssdCost)*mul,
+    count,type,billing,cpu,ram,hours
+  };
+}
+
+function onUpdate(){
+  try{
+    const c=calcCompute();
+    document.getElementById('ceInfo').innerHTML=
+      `预估月费：<strong>${fmt(c.total)}</strong> &nbsp;
+       计算: ${fmt(c.computeCost)} &nbsp; GPU: ${fmt(c.gpuCost)} &nbsp; 磁盘: ${fmt(c.diskCost+c.lssdCost)}`;
+  }catch(e){}
+}
+
+function addCompute(){
+  const c=calcCompute();
+  const billingLabel={od:'按需',cud1:'承诺1年',cud3:'承诺3年',spot:'Spot'}[document.getElementById('ceBilling').value];
+  addItem({
+    productId:'compute',name:'Compute Engine',icon:'🖥️',
+    label:`${c.count}×${c.type} | ${billingLabel} | ${c.hours}h/月`,
+    cost:c.total,
+    breakdown:[
+      {k:'实例计算费',v:c.computeCost},{k:'GPU费用',v:c.gpuCost},
+      {k:'持久磁盘',v:c.diskCost},{k:'本地SSD',v:c.lssdCost}
+    ]
+  });
+}
+
+// GKE
+function renderGKE(){
+  const html=matchUI('gkeMatch',{
+    groups:MACHINE_GROUPS, pool:MACHINE_TYPES, targetSel:'gkeType', onApply:onGKEUpdate,
+    defCpu:4, defRam:16, title:'🔍 智能匹配节点机型',
+    hint:'按 vCPU/内存匹配 Standard 模式的节点机型，点击「选用」即填入下方。'
+  })+card('GKE 集群配置',`
+    ${row(
+      fg('集群类型',sel('gkeMode',[['standard','Standard 模式'],['autopilot','Autopilot 模式']],'onGKEUpdate()')),
+      fg('节点数量',num('gkeNodes',3,1))
+    )}
+    ${row(
+      fg('节点机器类型',machineSelect('gkeType','onGKEUpdate()',false)),
+      fg('每月使用小时',num('gkeHours',730,1))
+    )}
+    ${row(
+      fg('节点磁盘 (GB)',num('gkeDisk',100,10,10)),
+      fg('Autopilot vCPU (核·秒/月, M)',num('gkeAPCPU',100,1),'仅Autopilot模式')
+    )}
+    ${rowFull(fg('集群管理费',sel('gkeFree',[['no','计入管理费 $0.10/集群·时 (~$73/月)'],['yes','使用每账号免费集群额度 (-$73)']],'onGKEUpdate()'),'每个 GKE 集群均收 $0.10/小时管理费；每个结算账号有 1 个免费集群额度（Standard 单区或 Autopilot）'))}
+    <div class="info-box" id="gkeInfo">-</div>
+    ${addBtn('addGKE()')}
+  `);
+  setTimeout(()=>{onGKEUpdate();runMatch('gkeMatch');},0);
+  return html;
+}
+
+function calcGKE(){
+  const mode=document.getElementById('gkeMode').value;
+  const mul=getRegionMul();
+  const useFree=document.getElementById('gkeFree').value==='yes';
+  const mgmt=useFree?0:0.10*730; // 所有集群 $0.10/小时 ≈ $73/月
+  if(mode==='autopilot'){
+    // Autopilot Balanced 计算类（us-central1）：vCPU $0.0645/时、内存 $0.0071354/GiB·时
+    const cpuM=+document.getElementById('gkeAPCPU').value||100; // 百万核·秒/月
+    const vcpuHrs=cpuM*1e6/3600;     // 核·小时/月
+    const ramHrs=vcpuHrs*4;          // 估算 4GiB/vCPU
+    const cost=vcpuHrs*0.0645+ramHrs*0.0071354;
+    return{total:(cost+mgmt)*mul,mgmt:mgmt*mul,nodes:cost*mul,disk:0,label:'Autopilot'};
+  }
+  const nodes=+document.getElementById('gkeNodes').value||3;
+  const type=document.getElementById('gkeType').value;
+  const hours=+document.getElementById('gkeHours').value||730;
+  const disk=+document.getElementById('gkeDisk').value||100;
+  const nodeCost=(MACHINE_TYPES[type]?.price||0.1)*hours*nodes;
+  const diskCost=DISK_PRICES.pd_balanced*disk*nodes;
+  return{total:(nodeCost+diskCost+mgmt)*mul,mgmt:mgmt*mul,nodes:nodeCost*mul,disk:diskCost*mul,label:`${nodes}×${type}`};
+}
+
+function onGKEUpdate(){
+  try{
+    const c=calcGKE();
+    document.getElementById('gkeInfo').innerHTML=`预估月费：<strong>${fmt(c.total)}</strong> &nbsp; 节点: ${fmt(c.nodes)} &nbsp; 磁盘: ${fmt(c.disk)} &nbsp; 管理费: ${fmt(c.mgmt)}`;
+  }catch(e){}
+}
+
+function addGKE(){
+  const c=calcGKE();
+  addItem({productId:'gke',name:'GKE',icon:'☸️',label:c.label,cost:c.total,
+    breakdown:[{k:'节点计算',v:c.nodes},{k:'节点磁盘',v:c.disk},{k:'集群管理费',v:c.mgmt}]});
+}
+
+// Cloud Run
+function renderCloudRun(){
+  return card('Cloud Run 配置',`
+    ${row(fg('月请求量 (百万)',num('crReq',10,0,0.1)),fg('平均并发',num('crConcurrency',80,1)))}
+    ${row(fg('每请求 CPU 时间 (ms)',num('crCPUms',200,1)),fg('内存分配 (MB)',sel('crMem',[['128','128 MB'],['256','256 MB'],['512','512 MB'],['1024','1 GB'],['2048','2 GB'],['4096','4 GB']])))}
+    ${row(fg('vCPU 数',sel('crCPU',[['1','1 vCPU'],['2','2 vCPU'],['4','4 vCPU'],['6','6 vCPU'],['8','8 vCPU']])),fg('最小实例数',num('crMin',0,0)))}
+    <div class="info-box" id="crInfo">-</div>
+    ${addBtn('addCloudRun()')}
+  `);
+  setTimeout(()=>document.getElementById('crInfo').innerHTML='配置后查看预估',0);
+}
+
+function addCloudRun(){
+  const req=+document.getElementById('crReq').value||10;
+  const cpuMs=+document.getElementById('crCPUms').value||200;
+  const mem=+document.getElementById('crMem').value||512;
+  const vcpu=+document.getElementById('crCPU').value||1;
+  const minInst=+document.getElementById('crMin').value||0;
+  const mul=getRegionMul();
+
+  const reqM=req*1e6;
+  // Free tier: 2M req/month, 180k vCPU-s, 360k GiB-s
+  const cpuS=reqM*(cpuMs/1000)*vcpu;
+  const memGiBs=reqM*(cpuMs/1000)*(mem/1024);
+  const reqCost=Math.max(0,reqM-2e6)*0.0000004;
+  const cpuCost=Math.max(0,cpuS-180000)*0.00002400;
+  const memCost=Math.max(0,memGiBs-360000)*0.00000250;
+  const minCost=minInst*(vcpu*0.00002400*730*3600);
+  const total=(reqCost+cpuCost+memCost+minCost)*mul;
+
+  document.getElementById('crInfo').innerHTML=`预估月费：<strong>${fmt(total)}</strong>`;
+  addItem({productId:'cloudrun',name:'Cloud Run',icon:'🚀',label:`${req}M请求/月`,cost:total,
+    breakdown:[{k:'请求费',v:reqCost*mul},{k:'CPU费',v:cpuCost*mul},{k:'内存费',v:memCost*mul},{k:'最小实例',v:minCost*mul}]});
+}
+
+// Cloud Functions
+function renderCloudFunctions(){
+  return card('Cloud Functions 配置',`
+    ${row(fg('月调用次数 (百万)',num('cfInv',10,0,0.1)),fg('平均执行时间 (ms)',num('cfDur',500,1)))}
+    ${row(fg('内存 (MB)',sel('cfMem',[['128','128 MB ($0.000000231/GiB-s)'],['256','256 MB'],['512','512 MB'],['1024','1 GB'],['2048','2 GB'],['4096','4 GB']])),
+          fg('出站流量 (GB/月)',num('cfEgress',1,0,0.1)))}
+    ${addBtn('addCF()')}
+  `);
+}
+
+function addCF(){
+  const inv=+document.getElementById('cfInv').value||10;
+  const dur=+document.getElementById('cfDur').value||500;
+  const mem=+document.getElementById('cfMem').value||256;
+  const egress=+document.getElementById('cfEgress').value||0;
+  const mul=getRegionMul();
+  const invM=inv*1e6;
+  const invFree=2e6; const gbsFree=400000; const ghzFree=200000;
+  const giBs=invM*(dur/1000)*(mem/1024);
+  const invCost=Math.max(0,invM-invFree)*0.0000004;
+  const compCost=Math.max(0,giBs-gbsFree)*0.0000025;
+  const egCost=Math.max(0,egress-5)*0.12;
+  const total=(invCost+compCost+egCost)*mul;
+  addItem({productId:'cloudfunctions',name:'Cloud Functions',icon:'⚡',label:`${inv}M调用/月`,cost:total,
+    breakdown:[{k:'调用费',v:invCost*mul},{k:'计算费',v:compCost*mul},{k:'出站流量',v:egCost*mul}]});
+}
+
+// Cloud Storage
+function renderStorage(){
+  return card('Cloud Storage 配置',`
+    ${row(
+      fg('存储类别',sel('gsClass',[
+        ['standard','Standard（标准）'],['nearline','Nearline（低频）'],
+        ['coldline','Coldline（极低频）'],['archive','Archive（归档）']
+      ],'onStorageUpdate()')),
+      fg('存储量 (GB)',num('gsSize',1000,0,10))
+    )}
+    ${row(
+      fg('A类操作 (千次/月)',num('gsOpA',100,0),'上传、列出对象'),
+      fg('B类操作 (千次/月)',num('gsOpB',1000,0),'下载、读取')
+    )}
+    ${row(
+      fg('出站流量到互联网 (GB/月)',num('gsEgress',100,0)),
+      fg('出站到其他区域 (GB/月)',num('gsEgressRegion',0,0))
+    )}
+    <div class="config-card" style="background:#f8f9fa;border:1px solid #e8e8e8;margin-top:8px;padding:12px">
+      <table class="tier-table">
+        <tr><th>存储类别</th><th>存储/GB/月</th><th>取回/GB</th><th>最短存储</th></tr>
+        <tr><td>Standard</td><td>$0.020</td><td>免费</td><td>无</td></tr>
+        <tr><td>Nearline</td><td>$0.010</td><td>$0.010</td><td>30天</td></tr>
+        <tr><td>Coldline</td><td>$0.004</td><td>$0.020</td><td>90天</td></tr>
+        <tr><td>Archive</td><td>$0.0012</td><td>$0.050</td><td>365天</td></tr>
+      </table>
+    </div>
+    <div class="info-box" id="gsInfo">-</div>
+    ${addBtn('addStorage()')}
+  `);
+  setTimeout(()=>onStorageUpdate(),0);
+}
+
+const GS_PRICES={standard:{store:0.020,retr:0,opA:0.05/1000,opB:0.004/1000},
+  nearline:{store:0.010,retr:0.01,opA:0.10/1000,opB:0.01/1000},
+  coldline:{store:0.004,retr:0.02,opA:0.10/1000,opB:0.005/1000},
+  archive:{store:0.0012,retr:0.05,opA:0.10/1000,opB:0.005/1000}};
+
+function calcStorage(){
+  const cls=document.getElementById('gsClass').value;
+  const size=+document.getElementById('gsSize').value||0;
+  const opA=+document.getElementById('gsOpA').value||0;
+  const opB=+document.getElementById('gsOpB').value||0;
+  const egress=+document.getElementById('gsEgress').value||0;
+  const egrRegion=+document.getElementById('gsEgressRegion').value||0;
+  const p=GS_PRICES[cls];
+  const mul=getRegionMul();
+  const storeCost=size*p.store;
+  const retrCost=(opB*1000/1e9)*size*p.retr; // rough retrieval estimate
+  const opACost=opA*p.opA*1000;
+  const opBCost=opB*p.opB*1000;
+  // 互联网出站分层（按 GB；阈值 10TiB=10240GB、150TiB=153600GB）：0–10TiB $0.12、10–150TiB $0.11、>150TiB $0.08
+  const egrCost=Math.min(egress,10240)*0.12+Math.max(0,Math.min(egress-10240,153600-10240))*0.11+Math.max(0,egress-153600)*0.08;
+  const egrRCost=egrRegion*0.01;
+  const total=(storeCost+opACost+opBCost+egrCost+egrRCost)*mul;
+  return{total,storeCost:storeCost*mul,opCost:(opACost+opBCost)*mul,egrCost:egrCost*mul,cls};
+}
+
+function onStorageUpdate(){
+  try{const c=calcStorage();document.getElementById('gsInfo').innerHTML=`预估月费：<strong>${fmt(c.total)}</strong> &nbsp; 存储: ${fmt(c.storeCost)} &nbsp; 操作: ${fmt(c.opCost)} &nbsp; 出站: ${fmt(c.egrCost)}`;}catch(e){}
+}
+
+function addStorage(){
+  const c=calcStorage();
+  const size=document.getElementById('gsSize').value;
+  addItem({productId:'storage',name:'Cloud Storage',icon:'🗄️',label:`${size}GB ${c.cls}`,cost:c.total,
+    breakdown:[{k:'存储费',v:c.storeCost},{k:'操作费',v:c.opCost},{k:'出站流量',v:c.egrCost}]});
+}
+
+// Filestore
+function renderFilestore(){
+  return card('Filestore 配置',`
+    ${row(fg('服务层级',sel('fsType',[['basic','Basic HDD ($0.16/GB/月)'],['premium','Basic SSD ($0.30/GB/月)'],['enterprise','Enterprise ($0.45/GB/月)']],'onUpdate2()')),
+          fg('容量 (GB)',num('fsSize',1024,1024,1024),'最小1024GB'))}
+    ${addBtn('addFilestore()')}
+  `);
+}
+function addFilestore(){
+  const type=document.getElementById('fsType').value;
+  const size=+document.getElementById('fsSize').value||1024;
+  const prices={basic:0.16,premium:0.30,enterprise:0.45};
+  const total=prices[type]*size*getRegionMul();
+  addItem({productId:'filestore',name:'Filestore',icon:'📁',label:`${size}GB ${type}`,cost:total,breakdown:[{k:'存储费',v:total}]});
+}
+
+// Cloud SQL 实例规格（vCPU + 内存 组件定价，Enterprise 版官方费率）
+const SQL_SPECS={};
+const SQL_GROUPS=[];
+(function buildSQL(){
+  const a=0.0413,b=0.007; // 每 vCPU / 每 GB 内存 小时单价（us-central1, Enterprise）
+  function add(g,name,cpu,ram){SQL_SPECS[name]={cpu,ram,price:+(a*cpu+b*ram).toFixed(5)};g.items.push(name);}
+  const gs={label:'共享核心',items:[]};
+  SQL_SPECS['db-f1-micro']={cpu:1,ram:0.6,price:0.0150};gs.items.push('db-f1-micro');
+  SQL_SPECS['db-g1-small']={cpu:1,ram:1.7,price:0.0500};gs.items.push('db-g1-small');
+  SQL_GROUPS.push(gs);
+  [
+    {key:'db-n1',label:'N1 系列',ratio:{standard:3.75,highmem:6.5,highcpu:0.9},
+      sizes:{standard:[1,2,4,8,16,32,64,96],highmem:[2,4,8,16,32,64,96],highcpu:[2,4,8,16,32,64,96]}},
+    {key:'db-n2',label:'N2 系列',ratio:{standard:4,highmem:8,highcpu:1},
+      sizes:{standard:[2,4,8,16,32,48,64,80,96,128],highmem:[2,4,8,16,32,48,64,80,96,128],highcpu:[2,4,8,16,32,48,64,80,96]}},
+  ].forEach(f=>{
+    const g={label:f.label,items:[]};
+    ['standard','highmem','highcpu'].forEach(kind=>f.sizes[kind].forEach(n=>add(g,`${f.key}-${kind}-${n}`,n,+(n*f.ratio[kind]).toFixed(2))));
+    SQL_GROUPS.push(g);
+  });
+})();
+
+function sqlSelect(id,onc){
+  let html=`<select id="${id}" onchange="${onc}">`;
+  SQL_GROUPS.forEach(g=>{
+    html+=`<optgroup label="${g.label}">`;
+    g.items.forEach(k=>{const v=SQL_SPECS[k];html+=`<option value="${k}">${k} · ${v.cpu}vCPU/${v.ram}GB</option>`;});
+    html+=`</optgroup>`;
+  });
+  return html+`</select>`;
+}
+
+// Cloud SQL
+function renderCloudSQL(){
+  const html=matchUI('sqlMatch',{
+    groups:SQL_GROUPS, pool:SQL_SPECS, targetSel:'sqlType', onApply:sqlPreview,
+    defCpu:2, defRam:8, title:'🔍 智能匹配实例规格',
+    hint:'按 vCPU/内存匹配数据库实例规格，点击「选用」即填入下方。'
+  })+card('Cloud SQL 配置',`
+    ${row(
+      fg('数据库引擎',sel('sqlEngine',[['mysql','MySQL'],['postgres','PostgreSQL'],['sqlserver','SQL Server']],'sqlPreview()')),
+      fg('机器类型',sqlSelect('sqlType','sqlPreview()'))
+    )}
+    ${row(
+      fg('存储类型',sel('sqlDiskType',[['ssd','SSD ($0.17/GB/月)'],['hdd','HDD ($0.09/GB/月)']],'sqlPreview()')),
+      fg('存储大小 (GB)',numS('sqlDisk',100,10,10))
+    )}
+    ${row(
+      fg('高可用 (HA)',sel('sqlHA',[['no','单实例'],['yes','高可用 (双倍费用)']],'sqlPreview()')),
+      fg('备份存储 (GB)',numS('sqlBackup',100,0,10))
+    )}
+    ${row(
+      fg('读取副本数',numS('sqlReplica',0,0)),
+      fg('每月运行小时',numS('sqlHours',730,1))
+    )}
+    <div class="info-box" id="sqlInfo">-</div>
+    ${addBtn('addSQL()')}
+  `);
+  setTimeout(()=>{sqlPreview();runMatch('sqlMatch');},0);
+  return html;
+}
+
+function calcSQL(){
+  const type=document.getElementById('sqlType').value;
+  const diskType=document.getElementById('sqlDiskType').value;
+  const disk=+document.getElementById('sqlDisk').value||100;
+  const ha=document.getElementById('sqlHA').value==='yes';
+  const replicas=+document.getElementById('sqlReplica').value||0;
+  const hours=+document.getElementById('sqlHours').value||730;
+  const backup=+document.getElementById('sqlBackup').value||0;
+  const mul=getRegionMul();
+  const unit=SQL_SPECS[type]?.price||0.083;
+  const instCost=unit*hours*(ha?2:1);
+  const diskCost=disk*(diskType==='ssd'?0.17:0.09)*(ha?2:1);
+  const replicaCost=unit*hours*replicas;
+  const backupCost=backup*0.08;
+  return{type,ha,
+    instCost:instCost*mul,diskCost:diskCost*mul,replicaCost:replicaCost*mul,backupCost:backupCost*mul,
+    total:(instCost+diskCost+replicaCost+backupCost)*mul};
+}
+
+function sqlPreview(){
+  try{
+    const c=calcSQL();
+    document.getElementById('sqlInfo').innerHTML=`预估月费：<strong>${fmt(c.total)}</strong> &nbsp; 实例: ${fmt(c.instCost)} &nbsp; 磁盘: ${fmt(c.diskCost)}${c.replicaCost>0?` &nbsp; 副本: ${fmt(c.replicaCost)}`:''}`;
+  }catch(e){}
+}
+
+function addSQL(){
+  const c=calcSQL();
+  addItem({productId:'cloudsql',name:'Cloud SQL',icon:'🛢️',label:`${c.type}${c.ha?' HA':''}`,cost:c.total,
+    breakdown:[{k:'实例费',v:c.instCost},{k:'磁盘费',v:c.diskCost},{k:'副本费',v:c.replicaCost},{k:'备份费',v:c.backupCost}]});
+}
+
+// Spanner
+function renderSpanner(){
+  return card('Cloud Spanner 配置',`
+    ${row(fg('处理单元 (PU)',num('spanPU',100,100,100),'1000PU=1节点；约 $0.72/节点·时 (Standard)'),
+          fg('存储 (GB)',num('spanStorage',100,1),'SSD $0.30/GB/月'))}
+    ${row(fg('每月运行小时',num('spanHours',730,1),'实例持续运行≈730'),fg('',''))}
+    ${addBtn('addSpanner()')}
+  `);
+}
+function addSpanner(){
+  const pu=+document.getElementById('spanPU').value||100;
+  const storage=+document.getElementById('spanStorage').value||100;
+  const hours=+document.getElementById('spanHours').value||730;
+  const mul=getRegionMul();
+  const computeCost=pu*0.00072*hours; // $0.72/节点·时 ÷ 1000PU × 小时
+  const storeCost=storage*0.30;
+  const total=(computeCost+storeCost)*mul;
+  addItem({productId:'spanner',name:'Cloud Spanner',icon:'🌐',label:`${pu} PU`,cost:total,
+    breakdown:[{k:`计算 ${pu}PU`,v:computeCost*mul},{k:`存储 ${storage}GB`,v:storeCost*mul}]});
+}
+
+// BigQuery
+function renderBigQuery(){
+  return card('BigQuery 配置',`
+    <div class="billing-tabs">
+      <button class="billing-tab active" onclick="setBQTab('od',this)">按需查询</button>
+      <button class="billing-tab" onclick="setBQTab('flat',this)">固定价格槽位</button>
+    </div>
+    <div id="bqOD">
+      ${row(fg('每月查询数据量 (TB)',num('bqTB',10,0,0.1),'前1TB免费'),
+            fg('活跃存储 (GB)',num('bqActiveGB',1000,0,10)))}
+      ${row(fg('长期存储 (GB, >90天)',num('bqLongGB',500,0,10)),
+            fg('流式插入 (GB/月)',num('bqStream',0,0,1)))}
+    </div>
+    <div id="bqFlat" style="display:none">
+      ${row(fg('版本 (Editions)',sel('bqEdition',[['standard','Standard ($0.04/槽·时)'],['enterprise','Enterprise ($0.06/槽·时)'],['plus','Enterprise Plus ($0.10/槽·时)']]),'按槽·小时计费 (PAYG)'),
+            fg('槽位数 (100槽起)',num('bqSlots',100,100,100)))}
+      ${row(fg('每月运行小时',num('bqSlotHours',730,1),'连续运行≈730'),
+            fg('存储 (GB)',num('bqFlatGB',1000,0,10)))}
+    </div>
+    <div class="info-box" id="bqInfo">-</div>
+    ${addBtn('addBQ()')}
+  `);
+}
+
+let bqMode='od';
+function setBQTab(m,el){
+  bqMode=m;
+  document.querySelectorAll('.billing-tab').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('bqOD').style.display=m==='od'?'':'none';
+  document.getElementById('bqFlat').style.display=m==='flat'?'':'none';
+}
+
+function addBQ(){
+  const mul=getRegionMul();
+  let total,breakdown,label;
+  if(bqMode==='od'){
+    const tb=+document.getElementById('bqTB').value||10;
+    const active=+document.getElementById('bqActiveGB').value||1000;
+    const longterm=+document.getElementById('bqLongGB').value||500;
+    const stream=+document.getElementById('bqStream').value||0;
+    const queryCost=Math.max(0,tb-1)*6.25;
+    const storeCost=active*0.023+longterm*0.016; // logical 活跃/长期
+    const streamCost=stream*0.05; // 流式插入 $0.05/GiB
+    total=(queryCost+storeCost+streamCost)*mul;
+    breakdown=[{k:`查询${tb}TB`,v:queryCost*mul},{k:'活跃存储',v:active*0.023*mul},{k:'长期存储',v:longterm*0.016*mul},{k:'流式插入',v:streamCost*mul}];
+    label=`按需 ${tb}TB`;
+  } else {
+    const edition=document.getElementById('bqEdition').value;
+    const rate={standard:0.04,enterprise:0.06,plus:0.10}[edition]||0.06;
+    const slots=+document.getElementById('bqSlots').value||100;
+    const slotHours=+document.getElementById('bqSlotHours').value||730;
+    const storage=+document.getElementById('bqFlatGB').value||1000;
+    const slotCost=slots*rate*slotHours; // 按槽·小时
+    const storeCost=storage*0.023;
+    total=(slotCost+storeCost)*mul;
+    breakdown=[{k:`${slots}槽×${edition}`,v:slotCost*mul},{k:'存储',v:storeCost*mul}];
+    label=`${edition} ${slots}槽`;
+  }
+  document.getElementById('bqInfo').innerHTML=`预估月费：<strong>${fmt(total)}</strong>`;
+  addItem({productId:'bigquery',name:'BigQuery',icon:'📊',label,cost:total,breakdown});
+}
+
+// Pub/Sub
+function renderPubSub(){
+  return card('Pub/Sub 配置',`
+    ${row(fg('发布消息量 (GB/月)',num('psPublish',100,0,1),'前10GB免费'),
+          fg('订阅消息量 (GB/月)',num('psSubscribe',100,0,1)))}
+    ${row(fg('快照存储 (GB/月)',num('psSnapshot',0,0)),
+          fg('消息留存天数',num('psRetain',7,1,1)))}
+    ${addBtn('addPubSub()')}
+  `);
+}
+function addPubSub(){
+  const pub=+document.getElementById('psPublish').value||100;
+  const sub=+document.getElementById('psSubscribe').value||100;
+  const snap=+document.getElementById('psSnapshot').value||0;
+  const mul=getRegionMul();
+  const pubCost=Math.max(0,pub-10)*0.04;
+  const subCost=Math.max(0,sub-10)*0.04;
+  const snapCost=snap*0.04;
+  const total=(pubCost+subCost+snapCost)*mul;
+  addItem({productId:'pubsub',name:'Pub/Sub',icon:'📨',label:`发${pub}GB/订${sub}GB`,cost:total,
+    breakdown:[{k:'发布费',v:pubCost*mul},{k:'订阅费',v:subCost*mul},{k:'快照',v:snapCost*mul}]});
+}
+
+// Cloud CDN
+function renderCloudCDN(){
+  return card('Cloud CDN 配置',`
+    ${row(fg('缓存出站流量 (TB/月)',num('cdnEgress',10,0,0.1)),
+          fg('HTTP 请求量 (百万/月)',num('cdnReq',100,0,1)))}
+    ${row(fg('缓存填充流量 (GB/月)',num('cdnFill',100,0,1)),
+          fg('缓存失效操作 (千次/月)',num('cdnInval',0,0)))}
+    ${addBtn('addCDN()')}
+  `);
+}
+function addCDN(){
+  const eg=+document.getElementById('cdnEgress').value||10;
+  const req=+document.getElementById('cdnReq').value||100;
+  const fill=+document.getElementById('cdnFill').value||100;
+  const inval=+document.getElementById('cdnInval').value||0;
+  const mul=getRegionMul();
+  // Egress tiered pricing (US/EU)
+  const egGB=eg*1024;
+  const egCost=Math.min(egGB,10240)*0.08+Math.max(0,Math.min(egGB-10240,512000)*0.055)+Math.max(0,(egGB-522240)*0.03);
+  const reqCost=req*1e6*0.00000075; // 缓存查找 $0.0075/万次 = $0.00000075/次
+  const fillCost=fill*0.01;          // 区域内缓存填充 $0.01/GB
+  const invalCost=0;                 // 缓存失效免费
+  const total=(egCost+reqCost+fillCost+invalCost)*mul;
+  addItem({productId:'cloudcdn',name:'Cloud CDN',icon:'🌍',label:`${eg}TB出站/月`,cost:total,
+    breakdown:[{k:'出站流量',v:egCost*mul},{k:'缓存查找',v:reqCost*mul},{k:'填充流量',v:fillCost*mul}]});
+}
+
+// Load Balancer
+function renderLoadBalancer(){
+  return card('Cloud Load Balancing 配置',`
+    ${row(fg('负载均衡器类型',sel('lbType',[['https','HTTPS 负载均衡'],['tcp','TCP/UDP 负载均衡'],['ssl','SSL 代理']])),
+          fg('转发规则数',num('lbRules',1,1)))}
+    ${row(fg('每月处理流量 (GB)',num('lbTraffic',1000,0,10)),
+          fg('后端服务数',num('lbBackends',2,1)))}
+    ${addBtn('addLB()')}
+  `);
+}
+function addLB(){
+  const rules=+document.getElementById('lbRules').value||1;
+  const traffic=+document.getElementById('lbTraffic').value||1000;
+  const mul=getRegionMul();
+  // 前 5 条转发规则 $0.025/时（打包），之后每条 $0.01/时
+  const ruleHr=(rules<=5?0.025:0.025+(rules-5)*0.01);
+  const ruleCost=ruleHr*730;
+  const trafficCost=traffic*0.008; // 数据处理 $0.008/GB（平价）
+  const total=(ruleCost+trafficCost)*mul;
+  addItem({productId:'loadbalancer',name:'Load Balancing',icon:'⚖️',label:`${rules}规则`,cost:total,
+    breakdown:[{k:'转发规则',v:ruleCost*mul},{k:'流量处理',v:trafficCost*mul}]});
+}
+
+// Cloud NAT
+function renderCloudNAT(){
+  return card('Cloud NAT 配置',`
+    ${row(fg('NAT 网关数',num('natGW',1,1)),fg('每网关使用的 VM 数',num('natVMs',4,1),'≤32台:$0.0014/时·VM；>32台封顶$0.044/时'))}
+    ${row(fg('每月处理数据量 (GB)',num('natData',100,0,10),'$0.045/GB'),fg('',''))}
+    ${addBtn('addNAT()')}
+  `);
+}
+function addNAT(){
+  const gw=+document.getElementById('natGW').value||1;
+  const vms=+document.getElementById('natVMs').value||1;
+  const data=+document.getElementById('natData').value||100;
+  const mul=getRegionMul();
+  const gwHr=Math.min(vms*0.0014,0.044); // 每网关每小时：$0.0014/VM，封顶 $0.044
+  const gwCost=gw*gwHr*730;
+  const dataCost=data*0.045;
+  const total=(gwCost+dataCost)*mul;
+  addItem({productId:'cloudnat',name:'Cloud NAT',icon:'🔀',label:`${gw}网关/${vms}VM`,cost:total,
+    breakdown:[{k:'网关费',v:gwCost*mul},{k:'数据处理',v:dataCost*mul}]});
+}
+
+// Memorystore Redis
+function renderMemorystore(){
+  return card('Memorystore for Redis 配置',`
+    ${row(fg('服务层级',sel('redisType',[['basic','Basic 层级'],['standard','Standard（HA）层级']],'onRedisUpdate()')),
+          fg('内存容量 (GB)',num('redisGB',5,1)))}
+    ${row(fg('Redis 版本',sel('redisVer',[['6','Redis 6.x'],['7','Redis 7.x']])),
+          fg('每月使用小时',num('redisHours',730,1)))}
+    <div class="info-box" id="redisInfo">-</div>
+    ${addBtn('addRedis()')}
+  `);
+  setTimeout(()=>onRedisUpdate(),0);
+}
+function onRedisUpdate(){
+  try{
+    const type=document.getElementById('redisType').value;
+    const gb=+document.getElementById('redisGB').value||5;
+    const hours=+document.getElementById('redisHours').value||730;
+    const mul=getRegionMul();
+    const pricePerGBHr={basic:0.049,standard:0.064}[type]; // 每 GiB·小时
+    const total=pricePerGBHr*gb*hours*mul;
+    document.getElementById('redisInfo').innerHTML=`预估月费：<strong>${fmt(total)}</strong> (${type} ${gb}GB)`;
+  }catch(e){}
+}
+function addRedis(){
+  const type=document.getElementById('redisType').value;
+  const gb=+document.getElementById('redisGB').value||5;
+  const hours=+document.getElementById('redisHours').value||730;
+  const mul=getRegionMul();
+  const pricePerGBHr={basic:0.049,standard:0.064}[type]; // 每 GiB·小时
+  const total=pricePerGBHr*gb*hours*mul;
+  addItem({productId:'memorystoreredis',name:'Memorystore Redis',icon:'🔴',label:`${type} ${gb}GB`,cost:total,
+    breakdown:[{k:`${type} ${gb}GB`,v:total}]});
+}
+
+// Logging
+function renderLogging(){
+  return card('Cloud Logging 配置',`
+    ${row(fg('每月日志量 (GB)',num('logGB',100,0,10),'前50GB免费'),
+          fg('日志留存天数',num('logRetain',30,1),'超出默认30天额外收费'))}
+    ${addBtn('addLogging()')}
+  `);
+}
+function addLogging(){
+  const gb=+document.getElementById('logGB').value||100;
+  const retain=+document.getElementById('logRetain').value||30;
+  const mul=getRegionMul();
+  const ingest=Math.max(0,gb-50)*0.50;
+  const store=retain>30?Math.max(0,gb-50)*(retain-30)*0.01:0;
+  const total=(ingest+store)*mul;
+  addItem({productId:'cloudlogging',name:'Cloud Logging',icon:'📋',label:`${gb}GB/月`,cost:total,
+    breakdown:[{k:'日志写入',v:ingest*mul},{k:'长期留存',v:store*mul}]});
+}
+
+// Monitoring
+function renderMonitoring(){
+  return card('Cloud Monitoring 配置',`
+    ${row(fg('监控数据量 (MiB/月)',num('monData',100,0,10),'前150MiB免费'),
+          fg('指标读取 API 调用 (千次/月)',num('monAPI',0,0)))}
+    ${addBtn('addMonitoring()')}
+  `);
+}
+function addMonitoring(){
+  const data=+document.getElementById('monData').value||100;
+  const api=+document.getElementById('monAPI').value||0;
+  const mul=getRegionMul();
+  const dataCost=Math.max(0,data-150)*0.258;
+  const apiCost=Math.max(0,api*1000-1e6)*0.01/1000;
+  const total=(dataCost+apiCost)*mul;
+  addItem({productId:'cloudmonitoring',name:'Cloud Monitoring',icon:'📈',label:`${data}MiB监控数据`,cost:total,
+    breakdown:[{k:'监控数据',v:dataCost*mul},{k:'API调用',v:apiCost*mul}]});
+}
+
+function renderPlaceholder(){
+  return `<div class="config-card"><p style="color:var(--text2);font-size:13px">该产品配置面板开发中...</p></div>`;
+}
+
+// ─── Cart & Summary ────────────────────────────────────────────────────────
+function addItem(item){
+  item.id=Date.now()+Math.random();
+  cartItems.push(item);
+  renderSidebar();
+  renderSummary();
+}
+
+function removeItem(id){
+  cartItems=cartItems.filter(i=>i.id!==id);
+  renderSidebar();
+  renderSummary();
+}
+
+function clearAll(){
+  if(cartItems.length===0)return;
+  cartItems=[];
+  renderSidebar();
+  renderSummary();
+}
+
+function setCurrency(c,el){
+  currency=c;
+  document.querySelectorAll('.currency-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderSummary();
+}
+
+function renderSummary(){
+  const el=document.getElementById('summaryContent');
+  if(cartItems.length===0){
+    el.innerHTML='<div class="summary-empty"><div class="icon">🧮</div>添加产品后，费用将在此汇总</div>';
+    return;
+  }
+  const total=cartItems.reduce((s,i)=>s+i.cost,0);
+  const annual=total*12;
+  const mul=currency==='CNY'?USD_TO_CNY:1;
+  const sym=currency==='CNY'?'¥':'$';
+
+  el.innerHTML=`
+    <div class="total-box">
+      <div class="total-label">预估月度总费用</div>
+      <div class="total-amount">${sym}${(total*mul).toFixed(2)}</div>
+      <div class="total-period">每月 · 所有产品合计</div>
+      <div class="total-annual">年费约 ${sym}${(annual*mul).toFixed(0)}</div>
+    </div>
+    <div class="item-list">
+      ${cartItems.map((item,i)=>`
+        <div class="summary-item">
+          <div class="summary-item-header">
+            <div class="summary-item-name">${item.icon} ${item.name}
+              <span style="font-size:11px;color:var(--text2);font-weight:400">${item.label}</span>
+            </div>
+            <button class="btn-remove" onclick="removeItem(${item.id})" title="移除">✕</button>
+          </div>
+          <div class="summary-item-cost">${fmt(item.cost)}/月</div>
+          ${item.breakdown?`
+            <span class="breakdown-toggle" onclick="toggleBreakdown(this)">▶ 查看明细</span>
+            <div class="breakdown-list">
+              ${item.breakdown.filter(b=>b.v>0.001).map(b=>`
+                <div class="breakdown-row"><span>${b.k}</span><span>${fmt(b.v)}</span></div>
+              `).join('')}
+            </div>
+          `:''}
+        </div>
+      `).join('')}
+    </div>
+    ${total>500?`<div class="cud-notice">💡 费用较高？考虑承诺使用折扣（CUD）可节省 37~55%</div>`:''}
+    <button class="export-btn" onclick="exportCSV()">📥 导出 CSV</button>
+    <button class="export-btn" onclick="copyJSON()">📋 复制 JSON</button>
+  `;
+}
+
+function toggleBreakdown(el){
+  const list=el.nextElementSibling;
+  const open=list.classList.toggle('open');
+  el.textContent=(open?'▼':'▶')+' 查看明细';
+}
+
+function exportCSV(){
+  const rows=[['产品','配置','月费(USD)','月费(CNY)']];
+  cartItems.forEach(i=>rows.push([i.name,i.label,i.cost.toFixed(4),(i.cost*USD_TO_CNY).toFixed(4)]));
+  const total=cartItems.reduce((s,i)=>s+i.cost,0);
+  rows.push(['合计','',total.toFixed(4),(total*USD_TO_CNY).toFixed(4)]);
+  const csv=rows.map(r=>r.join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csv);
+  a.download='gcp-estimate.csv';a.click();
+}
+
+function copyJSON(){
+  const data={region,currency,items:cartItems.map(i=>({name:i.name,label:i.label,monthlyCostUSD:+i.cost.toFixed(4)})),
+    totalMonthlyUSD:+cartItems.reduce((s,i)=>s+i.cost,0).toFixed(4)};
+  navigator.clipboard.writeText(JSON.stringify(data,null,2));
+  alert('已复制到剪贴板！');
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────
+renderSidebar();
+</script>
+</body>
+</html>
