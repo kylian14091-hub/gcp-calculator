@@ -237,6 +237,7 @@ const PRODUCTS = [
   {id:'memorystoreredis',name:'Memorystore (Redis)',desc:'托管 Redis',icon:'🔴',category:'数据库'},
   {id:'cloudlogging',name:'Cloud Logging',desc:'日志管理',icon:'📋',category:'运维'},
   {id:'cloudmonitoring',name:'Cloud Monitoring',desc:'监控告警',icon:'📈',category:'运维'},
+  {id:'vertexai',name:'Vertex AI',desc:'机器学习平台',icon:'🧠',category:'AI / ML'},
 ];
 
 // Machine types for Compute Engine — 全系列，价格为 us-central1 按需近似价 (USD/小时)
@@ -396,7 +397,7 @@ function renderConfig(id){
     bigquery:renderBigQuery, pubsub:renderPubSub, cloudcdn:renderCloudCDN,
     loadbalancer:renderLoadBalancer, cloudnat:renderCloudNAT,
     memorystoreredis:renderMemorystore, cloudlogging:renderLogging,
-    cloudmonitoring:renderMonitoring
+    cloudmonitoring:renderMonitoring, vertexai:renderVertexAI
   };
   el.innerHTML = `
     <div class="panel-header">
@@ -440,6 +441,10 @@ function num2(id,val,min=0,step=1){
 // 数字输入框（输入时刷新 Cloud SQL 预估）
 function numS(id,val,min=0,step=1){
   return `<input type="number" id="${id}" value="${val}" min="${min}" step="${step}" oninput="sqlPreview()">`
+}
+// 数字输入框（输入时刷新 Vertex AI 预估）
+function numV(id,val,min=0,step=1){
+  return `<input type="number" id="${id}" value="${val}" min="${min}" step="${step}" oninput="onVAISvc()">`
 }
 function addBtn(onclick){
   return `<div style="margin-top:8px"><button class="btn-add" onclick="${onclick}">➕ 添加到计算</button></div>`
@@ -1241,6 +1246,130 @@ function addMonitoring(){
   const total=(dataCost+apiCost)*mul;
   addItem({productId:'cloudmonitoring',name:'Cloud Monitoring',icon:'📈',label:`${data}MiB监控数据`,cost:total,
     breakdown:[{k:'监控数据',v:dataCost*mul},{k:'API调用',v:apiCost*mul}]});
+}
+
+// ─── Vertex AI ───────────────────────────────────────────────────────────────
+// 生成式 AI token 价 / Imagen 单价 / Embeddings 均来自官方（每 1M tokens 或 每张）
+const GEMINI_MODELS={
+  'g25pro':{name:'Gemini 2.5 Pro (≤200k)',in:1.25,out:10.00},
+  'g25pro-long':{name:'Gemini 2.5 Pro (>200k)',in:2.50,out:15.00},
+  'g25flash':{name:'Gemini 2.5 Flash',in:0.30,out:2.50},
+  'g25flashlite':{name:'Gemini 2.5 Flash-Lite',in:0.10,out:0.40},
+  'g20flash':{name:'Gemini 2.0 Flash',in:0.15,out:0.60},
+};
+const IMAGEN_MODELS={fast:{name:'Imagen 4 Fast',price:0.02},std:{name:'Imagen 4 Standard',price:0.04},ultra:{name:'Imagen 4 Ultra',price:0.06}};
+const VAI_GPU=[['none','无加速器'],['t4','NVIDIA T4'],['v100','NVIDIA V100'],['a100','NVIDIA A100'],['p100','NVIDIA P100']];
+
+function renderVertexAI(){
+  const geminiOpts=Object.entries(GEMINI_MODELS).map(([k,v])=>[k,`${v.name}  ($${v.in}/$${v.out} 每1M)`]);
+  const imagenOpts=Object.entries(IMAGEN_MODELS).map(([k,v])=>[k,`${v.name} ($${v.price}/张)`]);
+  return card('Vertex AI 配置',`
+    ${rowFull(fg('服务类型',sel('vaiSvc',[
+      ['gemini','生成式 AI · Gemini（按 token）'],
+      ['embed','向量嵌入 · Embeddings'],
+      ['imagen','图像生成 · Imagen'],
+      ['training','自定义训练'],
+      ['prediction','在线预测 · Endpoint'],
+      ['vector','向量搜索 · Vector Search'],
+    ],'onVAISvc()')))}
+
+    <div id="vaiGemini">
+      ${rowFull(fg('模型',sel('vaiModel',geminiOpts,'onVAISvc()')))}
+      ${row(fg('输入 tokens (百万/月)',numV('vaiInTok',10,0,0.1)),fg('输出 tokens (百万/月)',numV('vaiOutTok',2,0,0.1)))}
+    </div>
+
+    <div id="vaiEmbed" style="display:none">
+      ${rowFull(fg('嵌入 tokens (百万/月)',numV('vaiEmbTok',100,0,1),'gemini-embedding-001 · $0.15 / 1M tokens'))}
+    </div>
+
+    <div id="vaiImagen" style="display:none">
+      ${row(fg('模型',sel('vaiImgModel',imagenOpts,'onVAISvc()')),fg('生成图片数 / 月',numV('vaiImgCount',1000,0,1)))}
+    </div>
+
+    <div id="vaiTraining" style="display:none">
+      ${row(fg('机器类型',machineSelect('vaiTrainMachine','onVAISvc()',false)),fg('训练时长 (小时)',numV('vaiTrainHours',10,0,1)))}
+      ${row(fg('加速器',sel('vaiTrainGPU',VAI_GPU,'onVAISvc()')),fg('加速器数量',numV('vaiTrainGPUn',1,1)))}
+      <div class="hint">近似：机器按 Compute 机型价 + 标准 GPU 价计；Vertex 实际略含管理溢价。</div>
+    </div>
+
+    <div id="vaiPrediction" style="display:none">
+      ${row(fg('机器类型',machineSelect('vaiPredMachine','onVAISvc()',false)),fg('节点数',numV('vaiPredNodes',1,1)))}
+      ${row(fg('运行时长 (小时/月)',numV('vaiPredHours',730,0,1)),fg('加速器',sel('vaiPredGPU',VAI_GPU,'onVAISvc()')))}
+      ${rowFull(fg('加速器数量 / 节点',numV('vaiPredGPUn',0,0)))}
+      <div class="hint">近似：节点按 Compute 机型价计；GPU 按标准 GPU 价单独叠加。</div>
+    </div>
+
+    <div id="vaiVector" style="display:none">
+      ${row(fg('服务节点机型',machineSelect('vaiVecMachine','onVAISvc()',false)),fg('副本数',numV('vaiVecRep',2,1)))}
+      ${row(fg('运行时长 (小时/月)',numV('vaiVecHours',730,0,1)),fg('索引存储 (GB)',numV('vaiVecStore',10,0,1),'≈$0.005/GB/月（近似）'))}
+    </div>
+
+    <div class="info-box" id="vaiInfo">配置后查看预估</div>
+    ${addBtn('addVertexAI()')}
+  `);
+  setTimeout(()=>onVAISvc(),0);
+}
+
+function calcVAI(){
+  const svc=document.getElementById('vaiSvc').value;
+  const mul=getRegionMul();
+  if(svc==='gemini'){
+    const m=GEMINI_MODELS[document.getElementById('vaiModel').value];
+    const inT=+document.getElementById('vaiInTok').value||0;
+    const outT=+document.getElementById('vaiOutTok').value||0;
+    const inCost=inT*m.in, outCost=outT*m.out;
+    return{total:(inCost+outCost)*mul,label:`${m.name}`,breakdown:[{k:`输入 ${inT}M tok`,v:inCost*mul},{k:`输出 ${outT}M tok`,v:outCost*mul}]};
+  }
+  if(svc==='embed'){
+    const t=+document.getElementById('vaiEmbTok').value||0;
+    const c=t*0.15;
+    return{total:c*mul,label:`Embeddings ${t}M tok`,breakdown:[{k:'嵌入',v:c*mul}]};
+  }
+  if(svc==='imagen'){
+    const im=IMAGEN_MODELS[document.getElementById('vaiImgModel').value];
+    const n=+document.getElementById('vaiImgCount').value||0;
+    const c=n*im.price;
+    return{total:c*mul,label:`${im.name} ${n}张`,breakdown:[{k:'图像生成',v:c*mul}]};
+  }
+  if(svc==='training'){
+    const mp=MACHINE_TYPES[document.getElementById('vaiTrainMachine').value]?.price||0.1;
+    const h=+document.getElementById('vaiTrainHours').value||0;
+    const gpu=document.getElementById('vaiTrainGPU').value;
+    const gn=+document.getElementById('vaiTrainGPUn').value||1;
+    const mc=mp*h, gc=(gpu!=='none'?GPU_PRICES[gpu]*gn*h:0);
+    return{total:(mc+gc)*mul,label:`训练 ${h}h`,breakdown:[{k:'机器',v:mc*mul},{k:'加速器',v:gc*mul}]};
+  }
+  if(svc==='prediction'){
+    const mp=MACHINE_TYPES[document.getElementById('vaiPredMachine').value]?.price||0.1;
+    const nodes=+document.getElementById('vaiPredNodes').value||1;
+    const h=+document.getElementById('vaiPredHours').value||730;
+    const gpu=document.getElementById('vaiPredGPU').value;
+    const gn=+document.getElementById('vaiPredGPUn').value||0;
+    const mc=mp*nodes*h, gc=(gpu!=='none'?GPU_PRICES[gpu]*gn*nodes*h:0);
+    return{total:(mc+gc)*mul,label:`预测 ${nodes}节点`,breakdown:[{k:'节点计算',v:mc*mul},{k:'加速器',v:gc*mul}]};
+  }
+  // vector search
+  const mp=MACHINE_TYPES[document.getElementById('vaiVecMachine').value]?.price||0.067;
+  const rep=+document.getElementById('vaiVecRep').value||1;
+  const h=+document.getElementById('vaiVecHours').value||730;
+  const store=+document.getElementById('vaiVecStore').value||0;
+  const sc=mp*rep*h, stc=store*0.005;
+  return{total:(sc+stc)*mul,label:`向量搜索 ${rep}副本`,breakdown:[{k:'服务节点',v:sc*mul},{k:'索引存储',v:stc*mul}]};
+}
+
+function onVAISvc(){
+  const svc=document.getElementById('vaiSvc').value;
+  ['Gemini','Embed','Imagen','Training','Prediction','Vector'].forEach(s=>{
+    const map={Gemini:'gemini',Embed:'embed',Imagen:'imagen',Training:'training',Prediction:'prediction',Vector:'vector'};
+    const el=document.getElementById('vai'+s);
+    if(el) el.style.display=(map[s]===svc)?'':'none';
+  });
+  try{const c=calcVAI();document.getElementById('vaiInfo').innerHTML=`预估月费：<strong>${fmt(c.total)}</strong>`;}catch(e){}
+}
+
+function addVertexAI(){
+  const c=calcVAI();
+  addItem({productId:'vertexai',name:'Vertex AI',icon:'🧠',label:c.label,cost:c.total,breakdown:c.breakdown});
 }
 
 function renderPlaceholder(){
