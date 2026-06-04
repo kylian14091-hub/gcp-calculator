@@ -196,6 +196,25 @@ body{font-family:'Google Sans',Roboto,Arial,sans-serif;background:#f8f9fa;color:
   </div>
 </div>
 
+<footer style="background:#fff;border-top:1px solid var(--border);padding:18px 24px;font-size:12px;color:var(--text2);line-height:1.7">
+  <div style="max-width:1100px;margin:0 auto">
+    <div style="font-weight:600;color:#202124;margin-bottom:4px">📅 价格核对日期：2026-06-04　|　基准区域：us-central1（爱荷华）· 按需价　|　汇率：1 USD = 7.25 CNY</div>
+    <div>⚠️ 本工具仅供<strong>快速估算与对比参考</strong>，不构成账单承诺。区域价格为近似系数（非逐 SKU 实价）；训练/预测/向量搜索等部分项目为简化建模。实际费用请以
+      <a href="https://cloud.google.com/products/calculator" target="_blank" rel="noopener" style="color:var(--blue)">Google Cloud 官方计算器</a> 和真实账单为准。</div>
+    <div style="margin-top:6px">📚 数据来源：
+      <a href="https://cloud.google.com/compute/all-pricing" target="_blank" rel="noopener" style="color:var(--blue)">Compute</a> ·
+      <a href="https://cloud.google.com/storage/pricing" target="_blank" rel="noopener" style="color:var(--blue)">Storage</a> ·
+      <a href="https://cloud.google.com/bigquery/pricing" target="_blank" rel="noopener" style="color:var(--blue)">BigQuery</a> ·
+      <a href="https://cloud.google.com/sql/pricing" target="_blank" rel="noopener" style="color:var(--blue)">Cloud SQL</a> ·
+      <a href="https://cloud.google.com/spanner/pricing" target="_blank" rel="noopener" style="color:var(--blue)">Spanner</a> ·
+      <a href="https://cloud.google.com/memorystore/docs/redis/pricing" target="_blank" rel="noopener" style="color:var(--blue)">Memorystore</a> ·
+      <a href="https://cloud.google.com/vertex-ai/generative-ai/pricing" target="_blank" rel="noopener" style="color:var(--blue)">Vertex AI / Gemini</a> ·
+      <a href="https://cloud.google.com/kubernetes-engine/pricing" target="_blank" rel="noopener" style="color:var(--blue)">GKE</a> ·
+      <a href="https://cloud.google.com/run/pricing" target="_blank" rel="noopener" style="color:var(--blue)">Cloud Run</a>
+    </div>
+  </div>
+</footer>
+
 <script>
 // ─── Pricing Data ─────────────────────────────────────────────────────────
 // 区域价格系数（相对美国基准区域 us-central1 = 1.00 的近似比例，仅供估算参考）
@@ -1256,15 +1275,15 @@ const GEMINI_MODELS={
   'g31pro':{name:'Gemini 3.1 Pro (≤200k)',in:2.00,out:12.00},
   'g31pro-long':{name:'Gemini 3.1 Pro (>200k)',in:4.00,out:18.00},
   'g35flash':{name:'Gemini 3.5 Flash',in:1.50,out:9.00},
-  'g3flash':{name:'Gemini 3 Flash (Preview)',in:0.50,out:3.00},
-  'g31flashlite':{name:'Gemini 3.1 Flash-Lite',in:0.25,out:1.50},
+  'g3flash':{name:'Gemini 3 Flash (Preview)',in:0.50,out:3.00,inAudio:1.00},
+  'g31flashlite':{name:'Gemini 3.1 Flash-Lite',in:0.25,out:1.50,inAudio:0.50},
   // Gemini 2.5
   'g25pro':{name:'Gemini 2.5 Pro (≤200k)',in:1.25,out:10.00},
   'g25pro-long':{name:'Gemini 2.5 Pro (>200k)',in:2.50,out:15.00},
-  'g25flash':{name:'Gemini 2.5 Flash',in:0.30,out:2.50},
-  'g25flashlite':{name:'Gemini 2.5 Flash-Lite',in:0.10,out:0.40},
+  'g25flash':{name:'Gemini 2.5 Flash',in:0.30,out:2.50,inAudio:1.00},
+  'g25flashlite':{name:'Gemini 2.5 Flash-Lite',in:0.10,out:0.40,inAudio:0.30},
   // Gemini 2.0（已于 2026-06-01 停用，仅供历史估算）
-  'g20flash':{name:'Gemini 2.0 Flash (已停用)',in:0.15,out:0.60},
+  'g20flash':{name:'Gemini 2.0 Flash (已停用)',in:0.15,out:0.60,inAudio:1.00},
   'g20flashlite':{name:'Gemini 2.0 Flash-Lite (已停用)',in:0.075,out:0.30},
   // Gemini 1.5（旧版按字符计费，此处为 token 近似值）
   'g15pro':{name:'Gemini 1.5 Pro (≤128k, 近似)',in:1.25,out:5.00},
@@ -1289,7 +1308,7 @@ function renderVertexAI(){
     ],'onVAISvc()')))}
 
     <div id="vaiGemini">
-      ${rowFull(fg('模型',sel('vaiModel',geminiOpts,'onVAISvc()')))}
+      ${row(fg('模型',sel('vaiModel',geminiOpts,'onVAISvc()')),fg('输入类型',sel('vaiInType',[['text','文本 / 图片 / 视频'],['audio','音频']],'onVAISvc()'),'部分 Flash/Lite 音频输入价更高'))}
       ${row(fg('输入 tokens (百万/月)',numV('vaiInTok',10,0,0.1)),fg('输出 tokens (百万/月)',numV('vaiOutTok',2,0,0.1)))}
     </div>
 
@@ -1330,10 +1349,13 @@ function calcVAI(){
   const mul=getRegionMul();
   if(svc==='gemini'){
     const m=GEMINI_MODELS[document.getElementById('vaiModel').value];
+    const inType=document.getElementById('vaiInType').value;
+    const inRate=(inType==='audio'&&m.inAudio)?m.inAudio:m.in;
     const inT=+document.getElementById('vaiInTok').value||0;
     const outT=+document.getElementById('vaiOutTok').value||0;
-    const inCost=inT*m.in, outCost=outT*m.out;
-    return{total:(inCost+outCost)*mul,label:`${m.name}`,breakdown:[{k:`输入 ${inT}M tok`,v:inCost*mul},{k:`输出 ${outT}M tok`,v:outCost*mul}]};
+    const inCost=inT*inRate, outCost=outT*m.out;
+    const inLabel=(inType==='audio'?'音频输入':'输入');
+    return{total:(inCost+outCost)*mul,label:`${m.name}`,breakdown:[{k:`${inLabel} ${inT}M tok`,v:inCost*mul},{k:`输出 ${outT}M tok`,v:outCost*mul}]};
   }
   if(svc==='embed'){
     const t=+document.getElementById('vaiEmbTok').value||0;
