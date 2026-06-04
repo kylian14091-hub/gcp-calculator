@@ -1250,12 +1250,27 @@ function addMonitoring(){
 
 // ─── Vertex AI ───────────────────────────────────────────────────────────────
 // 生成式 AI token 价 / Imagen 单价 / Embeddings 均来自官方（每 1M tokens 或 每张）
+// Gemini 文本模型价（USD / 1M tokens，Global 端点标准价，核对日期 2026-06-04）
 const GEMINI_MODELS={
+  // Gemini 3.x（当前）
+  'g31pro':{name:'Gemini 3.1 Pro (≤200k)',in:2.00,out:12.00},
+  'g31pro-long':{name:'Gemini 3.1 Pro (>200k)',in:4.00,out:18.00},
+  'g35flash':{name:'Gemini 3.5 Flash',in:1.50,out:9.00},
+  'g3flash':{name:'Gemini 3 Flash (Preview)',in:0.50,out:3.00},
+  'g31flashlite':{name:'Gemini 3.1 Flash-Lite',in:0.25,out:1.50},
+  // Gemini 2.5
   'g25pro':{name:'Gemini 2.5 Pro (≤200k)',in:1.25,out:10.00},
   'g25pro-long':{name:'Gemini 2.5 Pro (>200k)',in:2.50,out:15.00},
   'g25flash':{name:'Gemini 2.5 Flash',in:0.30,out:2.50},
   'g25flashlite':{name:'Gemini 2.5 Flash-Lite',in:0.10,out:0.40},
-  'g20flash':{name:'Gemini 2.0 Flash',in:0.15,out:0.60},
+  // Gemini 2.0（已于 2026-06-01 停用，仅供历史估算）
+  'g20flash':{name:'Gemini 2.0 Flash (已停用)',in:0.15,out:0.60},
+  'g20flashlite':{name:'Gemini 2.0 Flash-Lite (已停用)',in:0.075,out:0.30},
+  // Gemini 1.5（旧版按字符计费，此处为 token 近似值）
+  'g15pro':{name:'Gemini 1.5 Pro (≤128k, 近似)',in:1.25,out:5.00},
+  'g15pro-long':{name:'Gemini 1.5 Pro (>128k, 近似)',in:2.50,out:10.00},
+  'g15flash':{name:'Gemini 1.5 Flash (≤128k, 近似)',in:0.075,out:0.30},
+  'g15flash-long':{name:'Gemini 1.5 Flash (>128k, 近似)',in:0.15,out:0.60},
 };
 const IMAGEN_MODELS={fast:{name:'Imagen 4 Fast',price:0.02},std:{name:'Imagen 4 Standard',price:0.04},ultra:{name:'Imagen 4 Ultra',price:0.06}};
 const VAI_GPU=[['none','无加速器'],['t4','NVIDIA T4'],['v100','NVIDIA V100'],['a100','NVIDIA A100'],['p100','NVIDIA P100']];
